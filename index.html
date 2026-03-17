@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Energy Dashboard</title>
+    <style>
+        body { font-family: 'Helvetica Neue', Arial, sans-serif; margin: 20px; background: #eef2f3; color: #333; }
+        h1 { text-align: center; color: #2c3e50; font-weight: 300; margin-bottom: 30px; }
+        .card { 
+            background: white; 
+            padding: 20px; 
+            border-radius: 12px; 
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05); 
+            margin: 0 auto 15px auto;
+            max-width: 800px;
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 10px;
+            align-items: center;
+        }
+        .time-box { grid-column: 1 / 4; border-bottom: 1px solid #eee; padding-bottom: 8px; margin-bottom: 10px; color: #7f8c8d; font-size: 0.85em; font-family: monospace; }
+        .data-item { text-align: center; }
+        .label { display: block; font-size: 0.75em; text-transform: uppercase; letter-spacing: 1px; color: #95a5a6; margin-bottom: 5px; }
+        .value { display: block; font-size: 1.5em; font-weight: bold; color: #2c3e50; }
+        .unit { font-size: 0.5em; margin-left: 3px; color: #7f8c8d; }
+        /* Instant power accent */
+        .power-value { color: #d35400; }
+    </style>
+</head>
+<body>
+    <h1>🔌 Energy Real-time Monitor</h1>
+    <div id="data-list">Loading data...</div>
+
+    <script>
+        async function update() {
+            try {
+                const res = await fetch('/api/data');
+                const data = await res.json();
+                
+                if (data.length === 0) {
+                    document.getElementById('data-list').innerHTML = '<div style="text-align:center">No data available yet.</div>';
+                    return;
+                }
+
+                document.getElementById('data-list').innerHTML = data.map(d => `
+                    <div class="card">
+                        <div class="time-box">Timestamp: ${d.timestamp} (ID: ${d.id})</div>
+                        
+                        <div class="data-item">
+                            <span class="label">Instant Power</span>
+                            <span class="value power-value">${d.active_power_w}<span class="unit">W</span></span>
+                        </div>
+                        
+                        <div class="data-item">
+                            <span class="label">Total Import</span>
+                            <span class="value">${d.total_import_kwh}<span class="unit">kWh</span></span>
+                        </div>
+                        
+                        <div class="data-item">
+                            <span class="label">Total Export</span>
+                            <span class="value">${d.total_export_kwh}<span class="unit">kWh</span></span>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (err) {
+                console.error("Fetch error:", err);
+                document.getElementById('data-list').innerHTML = '<div style="text-align:center; color:red">Connection Error</div>';
+            }
+        }
+
+        update();
+        setInterval(update, 2000);
+    </script>
+</body>
+</html>
