@@ -1,93 +1,66 @@
-var admin = require("firebase-admin");
-
-// const serviceAccount = require('./smart-meter-project-497ac-firebase-adminsdk-fbsvc-98a2a903d2.json');
-
-// admin.initializeApp({
-//   credential: admin.credential.cert(serviceAccount)
-// });
-
 const SmartmeterObis = require('smartmeter-obis');
-const path = require('path');
-const Database = require('better-sqlite3');
-const express = require('express');
+const fetch = require('node-fetch');
 
-// --- データベースの準備 ---
-const db = new Database('sensor_data.db');
-// index.js の初期化部分
-db.prepare(`
-    CREATE TABLE IF NOT EXISTS meter_readings (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-        active_power_w REAL,      -- 16.7.0 (瞬間電力)
-        total_import_kwh REAL,   -- 1.8.0 (積算受電量)
-        total_export_kwh REAL,   -- 2.8.0 (積算売電量)
-        raw_data TEXT            -- 念のため全データをJSONで残す用
-    )
-`).run();
+// --- Configuration ---
+// Replace with your actual Vercel deployment URL
+const VERCEL_API_URL = 'https://your-project-name.vercel.app/api/data'; 
 
 const options = {
     protocol: "SmlProtocol",
     transport: "SerialResponseTransport",
-    transportSerialPort: "/dev/tty.usbserial-130", 
+    transportSerialPort: "/dev/tty.usbserial-130", // Change this if Raspi uses a different port
     transportSerialBaudrate: 9600,
     obisNameLanguage: 'en',
     obisFallbackMedium: 6
 };
 
-// --- APIサーバーの準備 (フロントエンド用) ---
-const app = express();
-// 1. 静的ファイルの場所を「現在のフォルダ」に固定する
-app.use(express.static(path.join(__dirname)));
+// --- Data Transmission Logic ---
+async function sendToCloud(obisResult) {
+    const data = {
+        power: obisResult['1-0:16.7.0*255']?.value || 0,
+        importKwh: obisResult['1-0:1.8.0*255']?.value || 0,
+        exportKwh: obisResult['1-0:2.8.0*255']?.value || 0,
+        raw_data: obisResult
+    };
 
-// 2. ルートパス (/) にアクセスした時に index.html を強制的に読み込む
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'index.html'));
-});
-app.get('/api/data', (req, res) => {
+    console.log(`[${new Date().toLocaleTimeString()}] Sending: ${data.power}W to Vercel...`);
+
     try {
-        // readings ではなく meter_readings に変更！
-        const data = db.prepare('SELECT * FROM meter_readings ORDER BY id DESC LIMIT 100').all();
-        res.json(data);
+        const response = await fetch(VERCEL_API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+
+        if (response.ok) {
+            console.log("✅ Upload Successful");
+        } else {
+            console.error("❌ Upload Failed:", response.statusText);
+        }
     } catch (err) {
-        console.error("API Error:", err);
-        res.status(500).json({ error: err.message });
+        console.error("❌ Network Error:", err.message);
     }
-});
-app.listen(3000, () => console.log("API Server: http://localhost:3000"));
+}
 
-// --- データ受信時の処理 ---
-// --- 1. 受信時の処理を少し修正 ---
-function displayAndSaveData(err, obisResult) {
-    if (err) return console.error(err);
+// --- Main Callback ---
+function handleSensorData(err, obisResult) {
+    if (err) {
+        console.error("Sensor Error:", err);
+        // Wait 10 seconds and try to restart process if it fails
+        setTimeout(() => smTransport.process(), 10000);
+        return;
+    }
 
-    // 必要な値を抜き出す
-    const power = obisResult['1-0:16.7.0*255']?.value || 0;
-    const importKwh = obisResult['1-0:1.8.0*255']?.value || 0;
-    const exportKwh = obisResult['1-0:2.8.0*255']?.value || 0;
+    // Send data to Vercel
+    sendToCloud(obisResult);
 
-    console.log(`保存中... 電力: ${power}W, 受電: ${importKwh}kWh`);
-
-    // 1行にまとめて INSERT！
-    const insert = db.prepare(`
-        INSERT INTO meter_readings (active_power_w, total_import_kwh, total_export_kwh, raw_data)
-        VALUES (?, ?, ?, ?)
-    `);
-    
-    insert.run(power, importKwh, exportKwh, JSON.stringify(obisResult));
-
-    // 次の受信待機
+    // Trigger the next reading
     smTransport.process();
 }
 
-// --- 2. 最初の1回目をキックする ---
-const smTransport = SmartmeterObis.init(options, displayAndSaveData);
-console.log("Starting Smart Meter Reading (Press Ctrl+C to stop)...");
+// --- Start the Process ---
+console.log("Starting Smart Meter Bridge...");
+console.log(`Monitoring USB Port: ${options.transportSerialPort}`);
 
-// while(1) ではなく、これ一回でOK
+const smTransport = SmartmeterObis.init(options, handleSensorData);
 smTransport.process();
-// 1分間動かし続ける設定（テスト用に長めに変更）
-// setTimeout(() => {
-//     console.log("Stopping...");
-//     smTransport.stop();
-//     process.exit();
-// }, 60000);
