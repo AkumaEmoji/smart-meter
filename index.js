@@ -1,11 +1,10 @@
 var admin = require("firebase-admin");
 
-const serviceAccount = require('./smart-meter-project-497ac-firebase-adminsdk-fbsvc-98a2a903d2.json');
+// const serviceAccount = require('./smart-meter-project-497ac-firebase-adminsdk-fbsvc-98a2a903d2.json');
 
-
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount)
-});
+// admin.initializeApp({
+//   credential: admin.credential.cert(serviceAccount)
+// });
 
 const SmartmeterObis = require('smartmeter-obis');
 const path = require('path');
