@@ -1,5 +1,10 @@
+export default function handler(req, res) {
+  res.status(200).send("Cloud API is Active");
+}
+
 const SmartmeterObis = require('smartmeter-obis');
 const fetch = require('node-fetch');
+// Entrypoint for Vercel
 
 // --- Configuration ---
 // Replace with your actual Vercel deployment URL
