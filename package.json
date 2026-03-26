@@ -2,9 +2,10 @@
   "name": "smart-meter-app",
   "version": "1.0.0",
   "dependencies": {
+    "express": "^5.2.1",
     "firebase-admin": "^13.7.0",
     "node-fetch": "^2.7.0",
-    "smartmeter-obis": "^4.0.0",
-    "serialport": "^13.0.0"
+    "serialport": "^13.0.0",
+    "smartmeter-obis": "^4.0.0"
   }
 }

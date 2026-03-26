@@ -1,4 +1,8 @@
-// index.js - Vercel Cloud Entrypoint
-module.exports = (req, res) => {
-  res.status(200).send('Smart Meter Cloud API is Online. Dashboard is at index.html');
-};
+const express = require('express');
+const app = express();
+
+app.get('/', (req, res) => {
+  res.send('Smart Meter Cloud API is Online');
+});
+
+module.exports = app;
