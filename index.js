@@ -1,12 +1,18 @@
+// index.js
 const express = require('express');
 const app = express();
 const path = require('path');
 
-// This tells the Back-end to serve your Front-end (index.html)
 app.use(express.static(path.join(__dirname)));
 
-// This links your custom API logic
-const dataApi = require('./api/data');
-app.all('/api/data', dataApi);
+// ADDED ".default" HERE to catch the export from data.js
+const dataApi = require('./api/data').default; 
+
+// Safety check: only mount if it's a function
+if (typeof dataApi === 'function') {
+    app.all('/api/data', dataApi);
+} else {
+    console.error("API handler is not a function! Check your exports.");
+}
 
 module.exports = app;
