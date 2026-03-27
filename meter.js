@@ -1,19 +1,13 @@
-export default function handler(req, res) {
-  res.status(200).send("Cloud API is Active");
-}
-
-const SmartmeterObis = require('smartmeter-obis');
-const fetch = require('node-fetch');
-// Entrypoint for Vercel
+import SmartmeterObis from 'smartmeter-obis';
+import fetch from 'node-fetch';
 
 // --- Configuration ---
-// Replace with your actual Vercel deployment URL
 const VERCEL_API_URL = 'https://smart-meter-chi.vercel.app/api/data';
 
 const options = {
     protocol: "SmlProtocol",
     transport: "SerialResponseTransport",
-    transportSerialPort: "/dev/tty.usbserial-1130", // Change this if Raspi uses a different port
+    transportSerialPort: "/dev/tty.usbserial-1130", // Double check this with ls /dev/tty.usb*
     transportSerialBaudrate: 9600,
     obisNameLanguage: 'en',
     obisFallbackMedium: 6
@@ -28,7 +22,7 @@ async function sendToCloud(obisResult) {
         raw_data: obisResult
     };
 
-    console.log(`[${new Date().toLocaleTimeString()}] Sending: ${data.power}W to Vercel...`);
+    console.log(`[${new Date().toLocaleTimeString()}] Power: ${data.power}W -> Sending to Vercel...`);
 
     try {
         const response = await fetch(VERCEL_API_URL, {
@@ -51,21 +45,14 @@ async function sendToCloud(obisResult) {
 function handleSensorData(err, obisResult) {
     if (err) {
         console.error("Sensor Error:", err);
-        // Wait 10 seconds and try to restart process if it fails
         setTimeout(() => smTransport.process(), 10000);
         return;
     }
-
-    // Send data to Vercel
     sendToCloud(obisResult);
-
-    // Trigger the next reading
+    // Trigger the next reading (optional: use a timeout if you want to save battery/data)
     smTransport.process();
 }
 
-// --- Start the Process ---
-console.log("Starting Smart Meter Bridge...");
-console.log(`Monitoring USB Port: ${options.transportSerialPort}`);
-
+console.log("🚀 Starting Smart Meter Bridge...");
 const smTransport = SmartmeterObis.init(options, handleSensorData);
 smTransport.process();
