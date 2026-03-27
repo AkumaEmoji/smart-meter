@@ -34,9 +34,23 @@ export default async function handler(req, res) {
   }
   
   // For your index.html to show the data
-  if (req.method === 'GET') {
-    const snapshot = await db.collection('readings').orderBy('timestamp', 'desc').limit(50).get();
-    const results = snapshot.docs.map(doc => doc.data());
-    return res.status(200).json(results);
+if (req.method === 'GET') {
+    try {
+      const snapshot = await db.collection('readings').orderBy('timestamp', 'desc').limit(50).get();
+      
+      // If the database is empty, return an empty list instead of crashing
+      if (snapshot.empty) {
+        return res.status(200).json([]);
+      }
+
+      const results = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      return res.status(200).json(results);
+    } catch (error) {
+      console.error("Firebase Read Error:", error.message);
+      return res.status(500).json({ error: "Check Firebase Permissions or Environment Variables" });
+    }
   }
 }
