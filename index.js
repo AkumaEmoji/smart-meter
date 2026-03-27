@@ -32,20 +32,21 @@
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import dataHandler from './api/data.js'; // Ensure the .js is here!
+import dataHandler from './api/data.js';
 
+// These two lines are REQUIRED for ES Modules (type: module)
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
 
-// Serve static files (your index.html and CSS)
+// 1. Tell Express to serve your index.html automatically
 app.use(express.static(__dirname));
 
-// Link the API
+// 2. Link your working API
 app.all('/api/data', dataHandler);
 
-// Handle the root route explicitly
+// 3. Fallback: If someone visits "/", send the index.html file
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
