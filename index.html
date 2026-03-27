@@ -37,39 +37,52 @@
                 const res = await fetch('/api/data');
                 const data = await res.json();
                 
-                if (data.length === 0) {
+                if (!Array.isArray(data) || data.length === 0) {
                     document.getElementById('data-list').innerHTML = '<div style="text-align:center">No data available yet.</div>';
                     return;
                 }
 
-                document.getElementById('data-list').innerHTML = data.map(d => `
-                    <div class="card">
-                        <div class="time-box">Timestamp: ${d.timestamp} (ID: ${d.id})</div>
-                        
-                        <div class="data-item">
-                            <span class="label">Instant Power</span>
-                            <span class="value power-value">${d.active_power_w}<span class="unit">W</span></span>
+                document.getElementById('data-list').innerHTML = data.map(d => {
+                    // FIX: Convert Firebase Timestamp object to a readable Date
+                    let dateString = "Unknown Time";
+                    if (d.timestamp && d.timestamp._seconds) {
+                        dateString = new Date(d.timestamp._seconds * 1000).toLocaleString();
+                    } else if (d.timestamp) {
+                        // If it's already a string from the server
+                        dateString = new Date(d.timestamp).toLocaleString();
+                    }
+
+                    return `
+                        <div class="card">
+                            <div class="time-box">Time: ${dateString} <span style="float:right; opacity:0.5">ID: ${d.id || 'N/A'}</span></div>
+                            
+                            <div class="data-item">
+                                <span class="label">Instant Power</span>
+                                <span class="value power-value">${d.active_power_w || 0}<span class="unit">W</span></span>
+                            </div>
+                            
+                            <div class="data-item">
+                                <span class="label">Total Import</span>
+                                <span class="value">${d.total_import_kwh || 0}<span class="unit">kWh</span></span>
+                            </div>
+                            
+                            <div class="data-item">
+                                <span class="label">Total Export</span>
+                                <span class="value">${d.total_export_kwh || 0}<span class="unit">kWh</span></span>
+                            </div>
                         </div>
-                        
-                        <div class="data-item">
-                            <span class="label">Total Import</span>
-                            <span class="value">${d.total_import_kwh}<span class="unit">kWh</span></span>
-                        </div>
-                        
-                        <div class="data-item">
-                            <span class="label">Total Export</span>
-                            <span class="value">${d.total_export_kwh}<span class="unit">kWh</span></span>
-                        </div>
-                    </div>
-                `).join('');
+                    `;
+                }).join('');
             } catch (err) {
                 console.error("Fetch error:", err);
-                document.getElementById('data-list').innerHTML = '<div style="text-align:center; color:red">Connection Error</div>';
+                document.getElementById('data-list').innerHTML = '<div style="text-align:center; color:red">Connection Error: ' + err.message + '</div>';
             }
         }
 
+        // Initial load
         update();
-        setInterval(update, 2000);
+        // Refresh every 5 seconds (2 seconds is very fast for Firebase quotas!)
+        setInterval(update, 5000);
     </script>
 </body>
 </html>
