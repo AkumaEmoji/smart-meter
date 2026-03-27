@@ -13,7 +13,7 @@ const VERCEL_API_URL = 'https://smart-meter-chi.vercel.app/api/data';
 const options = {
     protocol: "SmlProtocol",
     transport: "SerialResponseTransport",
-    transportSerialPort: "/dev/tty.usbserial-130", // Change this if Raspi uses a different port
+    transportSerialPort: "/dev/tty.usbserial-1130", // Change this if Raspi uses a different port
     transportSerialBaudrate: 9600,
     obisNameLanguage: 'en',
     obisFallbackMedium: 6
