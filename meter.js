@@ -1,34 +1,35 @@
-export default function handler(req, res) {
-  res.status(200).send("Cloud API is Active");
-}
+import SmartmeterObis from 'smartmeter-obis';
+import fetch from 'node-fetch';
 
-const SmartmeterObis = require('smartmeter-obis');
-const fetch = require('node-fetch');
-// Entrypoint for Vercel
+const VERCEL_API_URL = 'https://smart-meter-chi.vercel.app/api/data';
 
-// --- Configuration ---
-// Replace with your actual Vercel deployment URL
-const VERCEL_API_URL = 'https://vercel.com/akumaemojis-projects/smart-meter/api/data';
+// 1. Create a variable to hold the last valid data from the sensor
+let latestObisData = null;
 
 const options = {
     protocol: "SmlProtocol",
     transport: "SerialResponseTransport",
-    transportSerialPort: "/dev/tty.usbserial-130", // Change this if Raspi uses a different port
+    transportSerialPort: "/dev/tty.usbserial-1130", 
     transportSerialBaudrate: 9600,
     obisNameLanguage: 'en',
     obisFallbackMedium: 6
 };
 
-// --- Data Transmission Logic ---
-async function sendToCloud(obisResult) {
+async function sendToCloud() {
+    // If we haven't received ANY data from the sensor yet, don't send anything
+    if (!latestObisData) {
+        console.log(`[${new Date().toLocaleTimeString()}] ⏳ Waiting for first sensor reading...`);
+        return;
+    }
+
     const data = {
-        power: obisResult['1-0:16.7.0*255']?.value || 0,
-        importKwh: obisResult['1-0:1.8.0*255']?.value || 0,
-        exportKwh: obisResult['1-0:2.8.0*255']?.value || 0,
-        raw_data: obisResult
+        power: latestObisData['1-0:16.7.0*255']?.value || 0,
+        importKwh: latestObisData['1-0:1.8.0*255']?.value || 0,
+        exportKwh: latestObisData['1-0:2.8.0*255']?.value || 0,
+        raw_data: latestObisData
     };
 
-    console.log(`[${new Date().toLocaleTimeString()}] Sending: ${data.power}W to Vercel...`);
+    console.log(`[${new Date().toLocaleTimeString()}] ☁️ Pushing to Cloud: ${data.power}W`);
 
     try {
         const response = await fetch(VERCEL_API_URL, {
@@ -47,25 +48,25 @@ async function sendToCloud(obisResult) {
     }
 }
 
-// --- Main Callback ---
+// 2. This function ONLY updates our local variable
 function handleSensorData(err, obisResult) {
     if (err) {
         console.error("Sensor Error:", err);
-        // Wait 10 seconds and try to restart process if it fails
-        setTimeout(() => smTransport.process(), 10000);
+        setTimeout(() => smTransport.process(), 5000);
         return;
     }
-
-    // Send data to Vercel
-    sendToCloud(obisResult);
-
-    // Trigger the next reading
+    
+    // Just update the latest data in memory
+    latestObisData = obisResult;
+    
+    // Keep the sensor listener active
     smTransport.process();
 }
 
-// --- Start the Process ---
-console.log("Starting Smart Meter Bridge...");
-console.log(`Monitoring USB Port: ${options.transportSerialPort}`);
-
+// 3. START THE PROCESSES
+console.log("🚀 Starting Smart Meter Bridge (10s Interval)...");
 const smTransport = SmartmeterObis.init(options, handleSensorData);
 smTransport.process();
+
+// 4. TRIGGER UPLOAD EVERY 10 SECONDS
+setInterval(sendToCloud, 10000);
