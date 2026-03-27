@@ -8,7 +8,7 @@ const fetch = require('node-fetch');
 
 // --- Configuration ---
 // Replace with your actual Vercel deployment URL
-const VERCEL_API_URL = 'https://vercel.com/akumaemojis-projects/smart-meter/api/data';
+const VERCEL_API_URL = 'https://smart-meter-chi.vercel.app/api/data';
 
 const options = {
     protocol: "SmlProtocol",
