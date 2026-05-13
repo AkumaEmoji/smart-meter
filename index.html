@@ -74,7 +74,6 @@
     .trend-btn{padding:5px 12px;border-radius:999px;font-size:.8rem;font-weight:700;cursor:pointer;border:1px solid var(--border);background:rgba(255,255,255,.04);color:var(--muted);transition:all .18s}
     .trend-btn.active{background:rgba(245,158,11,.18);color:var(--power);border-color:rgba(245,158,11,.30)}.trend-btn:hover{background:rgba(255,255,255,.08);color:var(--text)}
     .insight{margin-top:14px;padding:14px 16px;border-radius:14px;background:rgba(255,255,255,.03);border:1px solid var(--border);color:var(--muted);line-height:1.5;font-size:.94rem}
-    /* Chart legend */
     .chart-legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:10px}
     .legend-item{display:flex;align-items:center;gap:6px;font-size:.82rem;color:var(--muted)}
     .legend-dot{width:10px;height:10px;border-radius:50%}
@@ -91,7 +90,6 @@
 <body>
 <main class="container">
 
-  <!-- ── HEADER ── -->
   <header class="header">
     <div class="brand">
       <div class="plug-badge checking" id="plug-badge" aria-label="Checking connection"><span id="plug-emoji">🔌</span></div>
@@ -109,7 +107,6 @@
     </div>
   </header>
 
-  <!-- ── LIVE READINGS ── -->
   <section class="hero-grid">
     <article class="panel hero-card">
       <div>
@@ -128,14 +125,12 @@
     </aside>
   </section>
 
-  <!-- ── INFO CARDS ── -->
   <section class="info-grid">
     <article class="panel info-card"><div class="label">What this means</div><div class="value">Consumer-friendly overview</div><div class="desc">This dashboard is designed for home users, so it focuses on understandable energy information instead of raw technical meter output.</div></article>
     <article class="panel info-card"><div class="label">Current session</div><div id="samples-count" class="value">0 samples loaded</div><div class="desc">Recent samples from the API are shown below in a simple history table.</div></article>
     <article class="panel info-card"><div class="label">Connection note</div><div id="connection-note" class="value">Meter not connected yet</div><div class="desc">The page can be online even when the meter is not yet sending fresh readings.</div></article>
   </section>
 
-  <!-- ── TIME FILTER + AGGREGATED CHART ── -->
   <section class="panel section">
     <div class="section-head">
       <div>
@@ -145,7 +140,6 @@
       <span class="time-badge" id="period-badge">Last 30 days · by day</span>
     </div>
 
-    <!-- Time controls -->
     <div class="time-bar">
       <select id="time-filter" onchange="applyTimeFilter()">
         <option value="7d">Last 7 days</option>
@@ -162,7 +156,6 @@
       <span class="filter-count" id="time-filter-count"></span>
     </div>
 
-    <!-- Summary cards -->
     <div class="summary-grid">
       <div class="summary-card"><div class="k">Avg power per period</div><div class="v" id="sum-avg-power">--<small>W</small></div></div>
       <div class="summary-card"><div class="k">Peak power recorded</div><div class="v" id="sum-peak-power">--<small>W</small></div></div>
@@ -170,7 +163,6 @@
       <div class="summary-card"><div class="k">Avg daily export</div><div class="v" id="sum-avg-export">--<small>kWh</small></div></div>
     </div>
 
-    <!-- Aggregated chart -->
     <div class="trend-wrap">
       <div id="agg-scroll-inner" style="min-width:600px">
         <svg id="agg-chart" class="sparkline" viewBox="0 0 600 160" preserveAspectRatio="none" aria-label="Average power per time period"></svg>
@@ -189,7 +181,6 @@
     <div id="agg-insight" class="insight">Select a time range to see average use per period and compare family energy behavior over time.</div>
   </section>
 
-  <!-- ── RAW LIVE TREND ── -->
   <section class="panel section">
     <div class="section-head">
       <div>
@@ -218,7 +209,6 @@
     <div id="trend-insight" class="insight">Waiting for enough meter readings to describe recent energy behavior.</div>
   </section>
 
-  <!-- ── READINGS TABLE ── -->
   <section class="panel section">
     <div class="section-head">
       <div>
@@ -252,223 +242,276 @@
   </section>
 
 </main>
-<script>
-// ─────────────────────────────────────────
-//  STATE
-// ─────────────────────────────────────────
-const REFRESH_MS = 10000;
-let allData        = [];   // full dataset from /api/data
-let filteredByTime = [];   // after time range filter
-let trendRange     = 20;   // live chart point count
 
-// ─────────────────────────────────────────
-//  UTILITY HELPERS
-// ─────────────────────────────────────────
+<script>
+const REFRESH_MS = 10000;
+let allData = [];
+let filteredByTime = [];
+let trendRange = 20;
+
 function parseTs(ts) {
   if (ts && ts._seconds) return new Date(ts._seconds * 1000);
+  if (ts && ts.seconds) return new Date(ts.seconds * 1000);
   if (ts) return new Date(ts);
   return null;
 }
-function fmtLong(d)  { return (!d || isNaN(d)) ? 'Unknown' : d.toLocaleString(); }
-function fmtShort(d) {
-  if (!d || isNaN(d)) return 'Unknown';
-  return d.toLocaleString([], { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit', second:'2-digit' });
+
+function fmtLong(d) {
+  return (!d || Number.isNaN(d.getTime())) ? 'Unknown' : d.toLocaleString();
 }
+
+function fmtShort(d) {
+  if (!d || Number.isNaN(d.getTime())) return 'Unknown';
+  return d.toLocaleString([], {
+    day:'2-digit',
+    month:'short',
+    year:'numeric',
+    hour:'2-digit',
+    minute:'2-digit',
+    second:'2-digit'
+  });
+}
+
 function householdState(p) {
   return p > 5 ? 'Drawing from grid' : p < -5 ? 'Sending power out' : 'Near idle';
 }
+
 function freshness(d) {
-  if (!d || isNaN(d)) return { text:'Unknown', level:'off' };
-  const s = Math.floor((Date.now() - d) / 1000), m = Math.floor(s/60), h = Math.floor(m/60), dy = Math.floor(h/24);
-  if (s < 20)  return { text:'Fresh',         level:'ok' };
-  if (m < 5)   return { text:`${m} min old`,  level:'warn' };
-  if (h < 24)  return { text:`${h} h old`,    level:'warn' };
-  return           { text:`${dy} day(s) old`, level:'off' };
+  if (!d || Number.isNaN(d.getTime())) return { text:'Unknown', level:'off' };
+  const diffMs = Date.now() - d.getTime();
+  const s = Math.floor(diffMs / 1000);
+  const m = Math.floor(s / 60);
+  const h = Math.floor(m / 60);
+  const dy = Math.floor(h / 24);
+  if (s < 20) return { text:'Fresh', level:'ok' };
+  if (m < 5) return { text:`${m} min old`, level:'warn' };
+  if (h < 24) return { text:`${h} h old`, level:'warn' };
+  return { text:`${dy} day(s) old`, level:'off' };
 }
 
-// ─────────────────────────────────────────
-//  PLUG BADGE + DB TAG
-// ─────────────────────────────────────────
 function setDbStatus(s) {
   const badge = document.getElementById('plug-badge');
   const emoji = document.getElementById('plug-emoji');
-  const tag   = document.getElementById('db-tag');
-  const txt   = document.getElementById('db-tag-text');
+  const tag = document.getElementById('db-tag');
+  const txt = document.getElementById('db-tag-text');
   badge.classList.remove('db-connected','db-offline','checking');
   tag.classList.remove('connected','disconnected','checking');
+
   if (s === 'connected') {
-    badge.classList.add('db-connected'); emoji.textContent = '🟢';
-    tag.classList.add('connected'); txt.textContent = 'Database connected';
+    badge.classList.add('db-connected');
+    emoji.textContent = '🟢';
+    tag.classList.add('connected');
+    txt.textContent = 'Database connected';
     badge.setAttribute('aria-label','Database connected');
   } else if (s === 'frontend-only') {
-    badge.classList.add('db-offline'); emoji.textContent = '🔌';
-    tag.classList.add('disconnected'); txt.textContent = 'Frontend only — no DB data';
+    badge.classList.add('db-offline');
+    emoji.textContent = '🔌';
+    tag.classList.add('disconnected');
+    txt.textContent = 'Frontend only — no DB data';
     badge.setAttribute('aria-label','Frontend only — database not reached');
   } else {
-    badge.classList.add('checking'); emoji.textContent = '🔌';
-    tag.classList.add('checking'); txt.textContent = 'Checking database…';
+    badge.classList.add('checking');
+    emoji.textContent = '🔌';
+    tag.classList.add('checking');
+    txt.textContent = 'Checking database…';
     badge.setAttribute('aria-label','Checking database connection');
   }
 }
 
-// ─────────────────────────────────────────
-//  SVG LINE CHART  (reusable)
-// ─────────────────────────────────────────
 function drawLine(svgId, innerId, values, color, fillAlpha) {
   const svg = document.getElementById(svgId);
-  if (!svg) return;
-  const CH = 160, pad = 18;
-  const W  = Math.max(600, values.length * 10);
+  if (!svg) return { min:0, max:0, avg:0 };
+
+  const CH = 160;
+  const pad = 18;
+  const W = Math.max(600, values.length * 10);
+
   svg.setAttribute('viewBox', `0 0 ${W} ${CH}`);
   svg.style.minWidth = W + 'px';
-  if (innerId) document.getElementById(innerId).style.minWidth = W + 'px';
+  if (innerId) {
+    const inner = document.getElementById(innerId);
+    if (inner) inner.style.minWidth = W + 'px';
+  }
+
   svg.innerHTML = '';
   if (!values.length) return { min:0, max:0, avg:0 };
 
-  const mn  = Math.min(...values, 0);
-  const mx  = Math.max(...values, 0);
+  const mn = Math.min(...values, 0);
+  const mx = Math.max(...values, 0);
   const rng = Math.max(mx - mn, 1);
-  const avg = values.reduce((a,b) => a+b, 0) / values.length;
-  const xOf = i => pad + (i * (W - pad*2)) / Math.max(values.length - 1, 1);
-  const yOf = v => CH - pad - ((v - mn) / rng) * (CH - pad*2);
-  const pts  = values.map((v,i) => `${xOf(i)},${yOf(v)}`).join(' ');
+  const avg = values.reduce((a,b) => a + b, 0) / values.length;
+
+  const xOf = i => pad + (i * (W - pad * 2)) / Math.max(values.length - 1, 1);
+  const yOf = v => CH - pad - ((v - mn) / rng) * (CH - pad * 2);
+
+  const pts = values.map((v, i) => `${xOf(i)},${yOf(v)}`).join(' ');
   const baseY = yOf(0);
-  const area  = `${pad},${CH-pad} ${pts} ${W-pad},${CH-pad}`;
-  const dots  = values.length <= 60
-    ? values.map((v,i) => `<circle cx="${xOf(i)}" cy="${yOf(v)}" r="3.5" fill="${color}" opacity=".75"/>`).join('')
+  const area = `${pad},${CH - pad} ${pts} ${W - pad},${CH - pad}`;
+  const dots = values.length <= 60
+    ? values.map((v, i) => `<circle cx="${xOf(i)}" cy="${yOf(v)}" r="3.5" fill="${color}" opacity=".75"/>`).join('')
     : '';
+
   svg.innerHTML = `
     <line x1="${pad}" y1="${baseY}" x2="${W-pad}" y2="${baseY}" stroke="rgba(255,255,255,.12)" stroke-dasharray="4 4"/>
     <polyline points="${area}" fill="${color}" fill-opacity="${fillAlpha}" stroke="none"/>
     <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-    ${dots}`;
+    ${dots}
+  `;
+
   return { min:mn, max:mx, avg };
 }
 
-// ─────────────────────────────────────────
-//  LIVE TREND CHART
-// ─────────────────────────────────────────
 function setTrendRange(n, btn) {
   trendRange = n;
   document.querySelectorAll('.trend-btn').forEach(b => b.classList.remove('active'));
   if (btn) btn.classList.add('active');
   drawTrend();
 }
+
 function drawTrend() {
-  const data  = filteredByTime.length ? filteredByTime : allData;
-  const slice = trendRange === 0
-    ? [...data].reverse()
-    : [...data].slice(0, trendRange).reverse();
-  const vals  = slice.map(d => Number(d.active_power_w || 0));
-  if (!vals.length) { document.getElementById('trend-chart').innerHTML = ''; return; }
-  const lv  = vals[vals.length - 1];
+  const data = filteredByTime.length ? filteredByTime : allData;
+  const slice = trendRange === 0 ? [...data].reverse() : [...data].slice(0, trendRange).reverse();
+  const vals = slice.map(d => Number(d.active_power_w || 0));
+
+  if (!vals.length) {
+    document.getElementById('trend-chart').innerHTML = '';
+    document.getElementById('trend-min').textContent = 'Min: --';
+    document.getElementById('trend-avg').textContent = 'Avg: --';
+    document.getElementById('trend-max').textContent = 'Max: --';
+    document.getElementById('trend-range').textContent = 'Range: --';
+    document.getElementById('trend-points').textContent = 'Points: --';
+    document.getElementById('trend-insight').textContent = 'Waiting for enough meter readings to describe recent energy behavior.';
+    return;
+  }
+
+  const lv = vals[vals.length - 1];
   const col = lv < -5 ? '#4ade80' : lv > 5 ? '#f59e0b' : '#94a3b8';
-  const st  = drawLine('trend-chart', 'trend-scroll-inner', vals, col, 0.08);
-  document.getElementById('trend-min').textContent   = `Min: ${st.min.toFixed(1)} W`;
-  document.getElementById('trend-max').textContent   = `Max: ${st.max.toFixed(1)} W`;
-  document.getElementById('trend-avg').textContent   = `Avg: ${st.avg.toFixed(1)} W`;
+  const st = drawLine('trend-chart', 'trend-scroll-inner', vals, col, 0.08);
+
+  document.getElementById('trend-min').textContent = `Min: ${st.min.toFixed(1)} W`;
+  document.getElementById('trend-max').textContent = `Max: ${st.max.toFixed(1)} W`;
+  document.getElementById('trend-avg').textContent = `Avg: ${st.avg.toFixed(1)} W`;
   document.getElementById('trend-range').textContent = `Range: ${(st.max - st.min).toFixed(1)} W`;
-  document.getElementById('trend-points').textContent= `Points: ${vals.length}`;
+  document.getElementById('trend-points').textContent = `Points: ${vals.length}`;
+
   const sp = Math.abs(st.max - st.min);
   document.getElementById('trend-insight').textContent =
-    sp < 1           ? 'Recent readings are almost flat — household load is very stable or no fresh data is arriving.'
-    : lv > 5         ? 'The latest reading suggests the home is currently drawing power from the grid.'
-    : lv < -5        ? 'The latest reading suggests the home is currently exporting power back to the grid.'
-    :                  'Recent readings show small movement around idle power levels.';
+    sp < 1 ? 'Recent readings are almost flat — household load is very stable or no fresh data is arriving.'
+    : lv > 5 ? 'The latest reading suggests the home is currently drawing power from the grid.'
+    : lv < -5 ? 'The latest reading suggests the home is currently exporting power back to the grid.'
+    : 'Recent readings show small movement around idle power levels.';
 }
 
-// ─────────────────────────────────────────
-//  AGGREGATED FAMILY CHART
-// ─────────────────────────────────────────
 function getWeekNum(d) {
   const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
-  const day  = date.getUTCDay() || 7;
+  const day = date.getUTCDay() || 7;
   date.setUTCDate(date.getUTCDate() + 4 - day);
-  const y1   = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  const y1 = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
   return Math.ceil((((date - y1) / 86400000) + 1) / 7);
 }
+
 function bucketKey(dt, mode) {
   if (mode === 'month') return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}`;
-  if (mode === 'week')  return `${dt.getFullYear()}-W${String(getWeekNum(dt)).padStart(2,'0')}`;
+  if (mode === 'week') return `${dt.getFullYear()}-W${String(getWeekNum(dt)).padStart(2,'0')}`;
   return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
 }
+
 function getPeriodLabel(key) {
-  // Convert YYYY-MM-DD → "3 May 2026", YYYY-MM → "May 2026", YYYY-Wnn → "Week nn"
   if (/^\d{4}-W\d{2}$/.test(key)) return key.replace('-', ' ');
   if (/^\d{4}-\d{2}$/.test(key)) {
-    const [y,m] = key.split('-');
-    return new Date(y, m-1, 1).toLocaleString([], { month:'long', year:'numeric' });
+    const [y, m] = key.split('-');
+    return new Date(Number(y), Number(m) - 1, 1).toLocaleString([], { month:'long', year:'numeric' });
   }
   const d = new Date(key);
-  return isNaN(d) ? key : d.toLocaleString([], { day:'numeric', month:'short', year:'numeric' });
+  return Number.isNaN(d.getTime()) ? key : d.toLocaleString([], { day:'numeric', month:'short', year:'numeric' });
 }
 
 function buildAggregated(data) {
   const mode = document.getElementById('group-by').value;
-  const map  = {};
+  const map = {};
+
   data.forEach(item => {
     const dt = parseTs(item.timestamp);
-    if (!dt || isNaN(dt)) return;
+    if (!dt || Number.isNaN(dt.getTime())) return;
+
     const k = bucketKey(dt, mode);
     if (!map[k]) map[k] = { key:k, dt, power:[], import:[], export:[] };
+
     map[k].power.push(Number(item.active_power_w || 0));
     map[k].import.push(Number(item.total_import_kwh || 0));
     map[k].export.push(Number(item.total_export_kwh || 0));
   });
-  return Object.values(map).sort((a,b) => a.dt - b.dt).map(b => ({
-    label    : getPeriodLabel(b.key),
-    avgPower : b.power.reduce((x,y)=>x+y,0) / Math.max(b.power.length,1),
-    peakPower: Math.max(...b.power, 0),
-    avgImport: b.import.reduce((x,y)=>x+y,0) / Math.max(b.import.length,1),
-    avgExport: b.export.reduce((x,y)=>x+y,0) / Math.max(b.export.length,1)
-  }));
+
+  return Object.values(map)
+    .sort((a, b) => a.dt - b.dt)
+    .map(b => ({
+      label: getPeriodLabel(b.key),
+      avgPower: b.power.reduce((x, y) => x + y, 0) / Math.max(b.power.length, 1),
+      peakPower: Math.max(...b.power, 0),
+      avgImport: b.import.reduce((x, y) => x + y, 0) / Math.max(b.import.length, 1),
+      avgExport: b.export.reduce((x, y) => x + y, 0) / Math.max(b.export.length, 1)
+    }));
 }
 
 function drawAggChart(data) {
   const agg = buildAggregated(data);
+
   if (!agg.length) {
     document.getElementById('agg-chart').innerHTML = '';
     document.getElementById('agg-insight').textContent = 'No data available for this time range yet — try "All data" or wait for more readings to be collected.';
-    ['agg-periods','agg-min','agg-max','agg-latest'].forEach(id => document.getElementById(id).textContent = '--');
-    ['sum-avg-power','sum-peak-power','sum-avg-import','sum-avg-export'].forEach(id => document.getElementById(id).innerHTML = '--');
+    document.getElementById('agg-periods').textContent = 'Periods: --';
+    document.getElementById('agg-min').textContent = 'Lowest avg: --';
+    document.getElementById('agg-max').textContent = 'Highest avg: --';
+    document.getElementById('agg-latest').textContent = 'Latest bucket: --';
+    document.getElementById('sum-avg-power').innerHTML = '--<small>W</small>';
+    document.getElementById('sum-peak-power').innerHTML = '--<small>W</small>';
+    document.getElementById('sum-avg-import').innerHTML = '--<small>kWh</small>';
+    document.getElementById('sum-avg-export').innerHTML = '--<small>kWh</small>';
     return;
   }
-  const avgVals  = agg.map(x => x.avgPower);
+
+  const avgVals = agg.map(x => x.avgPower);
   const peakVals = agg.map(x => x.peakPower);
   drawLine('agg-chart', 'agg-scroll-inner', avgVals, '#38bdf8', 0.08);
 
-  // Overlay peak as subtle dots — redraw on top
   const svg = document.getElementById('agg-chart');
-  const W   = parseInt(svg.getAttribute('viewBox').split(' ')[2]);
-  const CH  = 160, pad = 18;
-  const mn  = Math.min(...avgVals, 0), mx = Math.max(...peakVals, mx || 0), rng = Math.max(mx - mn, 1);
-  const xOf = i => pad + (i * (W - pad*2)) / Math.max(agg.length - 1, 1);
-  const yOf = v => CH - pad - ((v - mn) / rng) * (CH - pad*2);
-  const peakDots = peakVals.map((v,i) =>
+  const viewBox = svg.getAttribute('viewBox').split(' ');
+  const W = Number(viewBox[2]);
+  const CH = 160;
+  const pad = 18;
+
+  const mn = Math.min(...avgVals, 0);
+  const mx = Math.max(...peakVals, ...avgVals, 0);
+  const rng = Math.max(mx - mn, 1);
+
+  const xOf = i => pad + (i * (W - pad * 2)) / Math.max(agg.length - 1, 1);
+  const yOf = v => CH - pad - ((v - mn) / rng) * (CH - pad * 2);
+
+  const peakDots = peakVals.map((v, i) =>
     `<circle cx="${xOf(i)}" cy="${yOf(v)}" r="4" fill="#f59e0b" opacity=".45"/>`
   ).join('');
+
   svg.innerHTML += peakDots;
 
-  // Summary stats
-  const overallAvg    = avgVals.reduce((a,b)=>a+b,0) / Math.max(avgVals.length,1);
-  const overallPeak   = Math.max(...peakVals, 0);
-  const overallImport = agg.reduce((a,b)=>a+b.avgImport,0) / Math.max(agg.length,1);
-  const overallExport = agg.reduce((a,b)=>a+b.avgExport,0) / Math.max(agg.length,1);
-  document.getElementById('sum-avg-power').innerHTML  = `${overallAvg.toFixed(1)}<small>W</small>`;
+  const overallAvg = avgVals.reduce((a, b) => a + b, 0) / Math.max(avgVals.length, 1);
+  const overallPeak = Math.max(...peakVals, 0);
+  const overallImport = agg.reduce((a, b) => a + b.avgImport, 0) / Math.max(agg.length, 1);
+  const overallExport = agg.reduce((a, b) => a + b.avgExport, 0) / Math.max(agg.length, 1);
+
+  document.getElementById('sum-avg-power').innerHTML = `${overallAvg.toFixed(1)}<small>W</small>`;
   document.getElementById('sum-peak-power').innerHTML = `${overallPeak.toFixed(1)}<small>W</small>`;
   document.getElementById('sum-avg-import').innerHTML = `${overallImport.toFixed(3)}<small>kWh</small>`;
   document.getElementById('sum-avg-export').innerHTML = `${overallExport.toFixed(3)}<small>kWh</small>`;
 
-  // Trend meta
   document.getElementById('agg-periods').textContent = `Periods: ${agg.length}`;
-  document.getElementById('agg-min').textContent     = `Lowest avg: ${Math.min(...avgVals).toFixed(1)} W`;
-  document.getElementById('agg-max').textContent     = `Highest avg: ${Math.max(...avgVals).toFixed(1)} W`;
-  document.getElementById('agg-latest').textContent  = `Latest: ${agg[agg.length-1].label}`;
+  document.getElementById('agg-min').textContent = `Lowest avg: ${Math.min(...avgVals).toFixed(1)} W`;
+  document.getElementById('agg-max').textContent = `Highest avg: ${Math.max(...avgVals).toFixed(1)} W`;
+  document.getElementById('agg-latest').textContent = `Latest: ${agg[agg.length - 1].label}`;
 
-  // Insight text
   const mode = document.getElementById('group-by').value;
-  const highest = agg.reduce((a,b) => b.avgPower > a.avgPower ? b : a);
-  const lowest  = agg.reduce((a,b) => b.avgPower < a.avgPower ? b : a);
+  const highest = agg.reduce((a, b) => b.avgPower > a.avgPower ? b : a);
+  const lowest = agg.reduce((a, b) => b.avgPower < a.avgPower ? b : a);
+
   document.getElementById('agg-insight').textContent =
     `This chart shows average household power grouped by ${mode}. ` +
     `The highest-use ${mode} in this range was ${highest.label} (${highest.avgPower.toFixed(1)} W avg). ` +
@@ -476,57 +519,59 @@ function drawAggChart(data) {
     `Blue line = average power per ${mode}. Orange dots = peak reading in that ${mode}.`;
 }
 
-// ─────────────────────────────────────────
-//  TIME FILTER
-// ─────────────────────────────────────────
 const TIME_LABELS = { '7d':'Last 7 days', '30d':'Last 30 days', '90d':'Last 90 days', '365d':'Last 12 months', 'all':'All data' };
 const GROUP_LABELS = { 'day':'by day', 'week':'by week', 'month':'by month' };
 
 function applyTimeFilter() {
-  const tf  = document.getElementById('time-filter').value;
-  const gb  = document.getElementById('group-by').value;
+  const tf = document.getElementById('time-filter').value;
+  const gb = document.getElementById('group-by').value;
+
   document.getElementById('period-badge').textContent = `${TIME_LABELS[tf]} · ${GROUP_LABELS[gb]}`;
+
   if (tf === 'all') {
     filteredByTime = [...allData];
   } else {
-    const days   = tf === '7d' ? 7 : tf === '30d' ? 30 : tf === '90d' ? 90 : 365;
+    const days = tf === '7d' ? 7 : tf === '30d' ? 30 : tf === '90d' ? 90 : 365;
     const cutoff = Date.now() - days * 86400000;
     filteredByTime = allData.filter(item => {
       const d = parseTs(item.timestamp);
-      return d && d.getTime() >= cutoff;
+      return d && !Number.isNaN(d.getTime()) && d.getTime() >= cutoff;
     });
   }
-  document.getElementById('time-filter-count').textContent =
-    `${filteredByTime.length} of ${allData.length} samples in range`;
+
+  document.getElementById('time-filter-count').textContent = `${filteredByTime.length} of ${allData.length} samples in range`;
+
   drawAggChart(filteredByTime);
   drawTrend();
   renderTable();
 }
 
-// ─────────────────────────────────────────
-//  READINGS TABLE
-// ─────────────────────────────────────────
 function renderTable() {
   const sv = document.getElementById('search-input').value.trim().toLowerCase();
   const sf = document.getElementById('status-filter').value;
   const pf = document.getElementById('power-filter').value;
   const data = filteredByTime.length ? filteredByTime : allData;
+
   let vis = 0;
+
   const rows = data.map((d, i) => {
-    const dt  = parseTs(d.timestamp);
-    const rp  = Number(d.active_power_w || 0);
-    const ri  = Number(d.total_import_kwh || 0);
-    const re  = Number(d.total_export_kwh || 0);
-    const sk  = i === 0 ? 'live' : 'history';
-    const ts  = fmtShort(dt);
-    const blob= `${sk} ${ts} ${rp.toFixed(1)} ${ri.toFixed(3)} ${re.toFixed(3)}`.toLowerCase();
+    const dt = parseTs(d.timestamp);
+    const rp = Number(d.active_power_w || 0);
+    const ri = Number(d.total_import_kwh || 0);
+    const re = Number(d.total_export_kwh || 0);
+    const sk = i === 0 ? 'live' : 'history';
+    const ts = fmtShort(dt);
+    const blob = `${sk} ${ts} ${rp.toFixed(1)} ${ri.toFixed(3)} ${re.toFixed(3)}`.toLowerCase();
+
     let show = true;
-    if (sv && !blob.includes(sv))             show = false;
-    if (sf && sk !== sf)                      show = false;
-    if (pf === 'drawing'   && !(rp > 5))      show = false;
-    if (pf === 'exporting' && !(rp < -5))     show = false;
-    if (pf === 'idle'      && !(rp >= -5 && rp <= 5)) show = false;
+    if (sv && !blob.includes(sv)) show = false;
+    if (sf && sk !== sf) show = false;
+    if (pf === 'drawing' && !(rp > 5)) show = false;
+    if (pf === 'exporting' && !(rp < -5)) show = false;
+    if (pf === 'idle' && !(rp >= -5 && rp <= 5)) show = false;
+
     if (!show) return '';
+
     vis++;
     return `<tr ${sv ? 'class="search-match"' : ''}>
       <td><span class="badge ${sk}">${i === 0 ? 'Live' : 'History'}</span></td>
@@ -536,8 +581,10 @@ function renderTable() {
       <td>${re.toFixed(3)} kWh</td>
     </tr>`;
   }).join('');
+
   document.getElementById('history-body').innerHTML =
     rows || '<tr><td colspan="5" class="no-data-msg">No readings match the current time range or filters.</td></tr>';
+
   document.getElementById('filter-count').textContent = `${vis} of ${data.length} rows`;
 }
 
@@ -548,82 +595,133 @@ function clearFilters() {
   renderTable();
 }
 
-// ─────────────────────────────────────────
-//  RENDER STATES
-// ─────────────────────────────────────────
 function renderEmptyState() {
+  allData = [];
+  filteredByTime = [];
   setDbStatus('frontend-only');
-  document.getElementById('api-status').textContent  = 'API reachable';
-  document.getElementById('api-dot').className       = 'dot ok';
-  document.getElementById('meter-status').textContent= 'No meter samples yet';
-  document.getElementById('meter-dot').className     = 'dot warn';
+
+  document.getElementById('api-status').textContent = 'API reachable — no data yet';
+  document.getElementById('api-dot').className = 'dot ok';
+  document.getElementById('meter-status').textContent = 'No meter samples yet';
+  document.getElementById('meter-dot').className = 'dot warn';
   document.getElementById('last-ui-update').textContent = `Screen updated: ${new Date().toLocaleTimeString()}`;
-  document.getElementById('main-power').innerHTML    = '--<span class="unit">W</span>';
-  document.getElementById('main-state').textContent  = 'Waiting for the first smart meter sample.';
+
+  document.getElementById('main-power').innerHTML = '--<span class="unit">W</span>';
+  document.getElementById('main-state').textContent = 'Waiting for the first smart meter sample.';
   document.getElementById('main-explainer').textContent = 'The dashboard is running, but it has not received usable live meter data yet.';
   document.getElementById('main-timestamp').textContent = 'Last meter sample: --';
-  document.getElementById('import-total').innerHTML  = '--<small>kWh</small>';
-  document.getElementById('export-total').innerHTML  = '--<small>kWh</small>';
+
+  document.getElementById('import-total').innerHTML = '--<small>kWh</small>';
+  document.getElementById('export-total').innerHTML = '--<small>kWh</small>';
   document.getElementById('freshness-value').textContent = 'Waiting...';
   document.getElementById('household-state').textContent = 'Unknown';
-  document.getElementById('samples-count').textContent   = '0 samples loaded';
+  document.getElementById('samples-count').textContent = '0 samples loaded';
   document.getElementById('connection-note').textContent = 'Meter not connected yet';
-  document.getElementById('history-body').innerHTML  = '<tr><td colspan="5" class="muted-block">No meter readings yet. Connect the smart meter to begin.</td></tr>';
+
+  document.getElementById('time-filter-count').textContent = '0 of 0 samples in range';
+  document.getElementById('filter-count').textContent = '0 of 0 rows';
+
+  document.getElementById('trend-chart').innerHTML = '';
+  document.getElementById('trend-min').textContent = 'Min: --';
+  document.getElementById('trend-avg').textContent = 'Avg: --';
+  document.getElementById('trend-max').textContent = 'Max: --';
+  document.getElementById('trend-range').textContent = 'Range: --';
+  document.getElementById('trend-points').textContent = 'Points: --';
+  document.getElementById('trend-insight').textContent = 'Waiting for enough meter readings to describe recent energy behavior.';
+
+  document.getElementById('agg-chart').innerHTML = '';
+  document.getElementById('agg-periods').textContent = 'Periods: --';
+  document.getElementById('agg-min').textContent = 'Lowest avg: --';
+  document.getElementById('agg-max').textContent = 'Highest avg: --';
+  document.getElementById('agg-latest').textContent = 'Latest bucket: --';
   document.getElementById('agg-insight').textContent = 'Select a time range to see average use per period.';
+  document.getElementById('sum-avg-power').innerHTML = '--<small>W</small>';
+  document.getElementById('sum-peak-power').innerHTML = '--<small>W</small>';
+  document.getElementById('sum-avg-import').innerHTML = '--<small>kWh</small>';
+  document.getElementById('sum-avg-export').innerHTML = '--<small>kWh</small>';
+
+  document.getElementById('history-body').innerHTML = '<tr><td colspan="5" class="muted-block">No meter readings yet. Connect the smart meter to begin.</td></tr>';
 }
 
 function renderErrorState() {
   setDbStatus('frontend-only');
-  document.getElementById('api-status').textContent   = 'API not reachable';
-  document.getElementById('api-dot').className        = 'dot off';
+  document.getElementById('api-status').textContent = 'API not reachable';
+  document.getElementById('api-dot').className = 'dot off';
   document.getElementById('meter-status').textContent = 'Meter status unknown';
-  document.getElementById('meter-dot').className      = 'dot off';
+  document.getElementById('meter-dot').className = 'dot off';
   document.getElementById('last-ui-update').textContent = `Screen updated: ${new Date().toLocaleTimeString()}`;
   document.getElementById('connection-note').textContent = 'Connection interrupted';
-  document.getElementById('history-body').innerHTML   = '<tr><td colspan="5" class="muted-block" style="color:#fecaca;">Connection interrupted. Cannot reach /api/data right now.</td></tr>';
+  document.getElementById('history-body').innerHTML = '<tr><td colspan="5" class="muted-block" style="color:#fecaca;">Connection interrupted. Cannot reach /api/data right now.</td></tr>';
 }
 
 function renderDashboard(data) {
   allData = data;
   setDbStatus('connected');
-  const latest     = data[0];
-  const power      = Number(latest.active_power_w    || 0);
-  const importKwh  = Number(latest.total_import_kwh  || 0);
-  const exportKwh  = Number(latest.total_export_kwh  || 0);
-  const ld         = parseTs(latest.timestamp);
-  const fr         = freshness(ld);
 
-  document.getElementById('api-status').textContent   = 'API reachable';
-  document.getElementById('api-dot').className        = 'dot ok';
+  const latest = data[0];
+  const power = Number(latest.active_power_w || 0);
+  const importKwh = Number(latest.total_import_kwh || 0);
+  const exportKwh = Number(latest.total_export_kwh || 0);
+  const ld = parseTs(latest.timestamp);
+  const fr = freshness(ld);
+
+  document.getElementById('api-status').textContent = 'API reachable';
+  document.getElementById('api-dot').className = 'dot ok';
   document.getElementById('meter-status').textContent = fr.level === 'ok' ? 'Meter sending fresh data' : 'Meter data is stale';
-  document.getElementById('meter-dot').className      = `dot ${fr.level}`;
+  document.getElementById('meter-dot').className = `dot ${fr.level}`;
   document.getElementById('last-ui-update').textContent = `Screen updated: ${new Date().toLocaleTimeString()}`;
-  document.getElementById('main-power').innerHTML     = `${power.toFixed(1)}<span class="unit">W</span>`;
-  document.getElementById('main-state').textContent   = householdState(power);
-  document.getElementById('main-explainer').textContent = fr.level === 'ok'
-    ? 'This is the latest live power reading from the smart meter.'
-    : 'The dashboard has data, but the most recent meter sample is not fresh.';
+
+  document.getElementById('main-power').innerHTML = `${power.toFixed(1)}<span class="unit">W</span>`;
+  document.getElementById('main-state').textContent = householdState(power);
+  document.getElementById('main-explainer').textContent =
+    fr.level === 'ok'
+      ? 'This is the latest live power reading from the smart meter.'
+      : 'The dashboard has data, but the most recent meter sample is not fresh.';
   document.getElementById('main-timestamp').textContent = `Last meter sample: ${fmtLong(ld)}`;
-  document.getElementById('import-total').innerHTML   = `${importKwh.toFixed(3)}<small>kWh</small>`;
-  document.getElementById('export-total').innerHTML   = `${exportKwh.toFixed(3)}<small>kWh</small>`;
+
+  document.getElementById('import-total').innerHTML = `${importKwh.toFixed(3)}<small>kWh</small>`;
+  document.getElementById('export-total').innerHTML = `${exportKwh.toFixed(3)}<small>kWh</small>`;
   document.getElementById('freshness-value').textContent = fr.text;
   document.getElementById('household-state').textContent = householdState(power);
-  document.getElementById('samples-count').textContent   = `${data.length} samples loaded`;
-  document.getElementById('connection-note').textContent = fr.level === 'ok' ? 'Live meter data visible' : 'Dashboard online, meter data stale';
+  document.getElementById('samples-count').textContent = `${data.length} samples loaded`;
+  document.getElementById('connection-note').textContent =
+    fr.level === 'ok' ? 'Live meter data visible' : 'Dashboard online, meter data stale';
+
   applyTimeFilter();
 }
 
-// ─────────────────────────────────────────
-//  FETCH + POLL
-// ─────────────────────────────────────────
 async function update() {
   try {
-    const res  = await fetch('/api/data');
+    const res = await fetch('/api/data');
+
+    if (!res.ok) {
+      console.error('API HTTP error:', res.status, res.statusText);
+      renderErrorState();
+      return;
+    }
+
     const data = await res.json();
-    if (!Array.isArray(data) || data.length === 0) { renderEmptyState(); return; }
-    renderDashboard(data);
-  } catch (err) {
-    console.error('Fetch error:', err);
+
+    if (!Array.isArray(data)) {
+      console.error('API did not return an array:', data);
+      renderErrorState();
+      return;
+    }
+
+    if (data.length === 0) {
+      renderEmptyState();
+      return;
+    }
+
+    try {
+      renderDashboard(data);
+    } catch (renderErr) {
+      console.error('Render error:', renderErr);
+      document.getElementById('connection-note').textContent = 'Frontend render error';
+      document.getElementById('history-body').innerHTML = '<tr><td colspan="5" class="muted-block" style="color:#fecaca;">Data was received, but the dashboard hit a render error. Check the browser console.</td></tr>';
+    }
+  } catch (fetchErr) {
+    console.error('Fetch error:', fetchErr);
     renderErrorState();
   }
 }
