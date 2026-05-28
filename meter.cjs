@@ -11,8 +11,6 @@ admin.initializeApp({
 const db = admin.firestore();
 // ----------------------------
 
-let latestObisData = null;
-
 const options = {
     protocol: "SmlProtocol",
     transport: "SerialResponseTransport",
@@ -22,14 +20,32 @@ const options = {
     obisFallbackMedium: 6
 };
 
-function handleSensorData(err, obisResult) {
+// Helper function to safely extract OBIS values
+const getValue = (obisResult, obisCode) => {
+    for (const id in obisResult) {
+        const entry = obisResult[id];
+        if (entry.idToString() === obisCode) {
+            const v = entry.getValue && entry.getValue();
+            if (v && v.value !== undefined && v.value !== null) {
+                return v.value;
+            }
+            const parsed = parseFloat(entry.valueToString());
+            return isNaN(parsed) ? 0 : parsed;
+        }
+    }
+    return 0;
+};
+
+// Callback function triggered automatically whenever new data is read from the meter
+async function handleSensorData(err, obisResult) {
     if (err) {
         console.error("Sensor Error:", err);
-        setTimeout(() => smTransport.process(), 5000);
         return;
     }
 
-    console.log("----- New Telegram -----");
+    console.log("----- New Telegram Received -----");
+    
+    // Display raw telegram entries in the console
     for (let obisId in obisResult) {
         const entry = obisResult[obisId];
         console.log(
@@ -41,48 +57,22 @@ function handleSensorData(err, obisResult) {
         );
     }
 
-    latestObisData = obisResult;
-    smTransport.process();
-}
-
-async function sendToCloud() {
-    if (!latestObisData) {
-        console.log(`[${new Date().toLocaleTimeString()}] ⏳ Waiting for first sensor reading...`);
-        return;
-    }
-
-    // Match by idToString() instead of a hardcoded object key
-    const getValue = (obisCode) => {
-        for (const id in latestObisData) {
-            const entry = latestObisData[id];
-            if (entry.idToString() === obisCode) {
-                // Try the structured value first, guarding against null
-                const v = entry.getValue && entry.getValue();
-                if (v && v.value !== undefined && v.value !== null) {
-                    return v.value;
-                }
-                // Fall back to parsing the string form (e.g. "0.1198 kWh" -> 0.1198)
-                const parsed = parseFloat(entry.valueToString());
-                return isNaN(parsed) ? 0 : parsed;
-            }
-        }
-        return 0;
-    };
-
+    // Parse the data from the newly fetched telegram (updates even if values are identical)
     const data = {
-        power:     getValue('1-0:16.7.0*255'),
-        importKwh: getValue('1-0:1.8.0*255'),
-        exportKwh: getValue('1-0:2.8.0*255'),
+        power:     getValue(obisResult, '1-0:16.7.0*255'),
+        importKwh: getValue(obisResult, '1-0:1.8.0*255'),
+        exportKwh: getValue(obisResult, '1-0:2.8.0*255'),
         timestamp: admin.firestore.FieldValue.serverTimestamp()
     };
 
     console.log(`[${new Date().toLocaleTimeString()}] ☁️ Pushing to Firestore: ${data.power}W`);
 
     try {
+        // Always save to database since this is a fresh reading request
         await db.collection("readings").add(data);
         console.log("✅ Upload Successful");
         
-        // --- Display uploaded data right after uploading ---
+        // Display the uploaded data summary immediately after a successful upload
         console.log("📊 --- Uploaded Data Summary ---");
         console.log(`| Power:      ${data.power} W`);
         console.log(`| Import kWh: ${data.importKwh} kWh`);
@@ -94,9 +84,19 @@ async function sendToCloud() {
     }
 }
 
-console.log("🚀 Starting Smart Meter Reading...");
+// Initialize the transport layer with options and callback
 const smTransport = SmartmeterObis.init(options, handleSensorData);
-smTransport.process();
 
-// Push to Firebase every 10 seconds
-setInterval(sendToCloud, 10000);
+console.log("🚀 Starting Smart Meter Task Loop (Every 10 seconds)...");
+
+// Main worker function to trigger a single on-demand hardware read
+function requestMeterData() {
+    console.log(`[${new Date().toLocaleTimeString()}] 🔄 Requesting fresh data from meter hardware...`);
+    smTransport.process(); 
+}
+
+// Trigger the first data request immediately on startup
+requestMeterData();
+
+// Continuously request fresh data from the physical hardware every 10 seconds
+setInterval(requestMeterData, 10000);
