@@ -72,7 +72,7 @@ async function displayAndSaveData(err, obisResult) {
     try {
         await firestoreDb.collection('meter_readings').add({
             timestamp: admin.firestore.FieldValue.serverTimestamp(), // Firestore のサーバータイムスタンプを使用
-            active_power_w: power,
+            power: power,
             total_import_kwh: importKwh,
             total_export_kwh: exportKwh,
             raw_data: JSON.stringify(obisResult)
