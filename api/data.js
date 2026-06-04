@@ -17,7 +17,7 @@ export default async function handler(req, res) {
 
   try {
     if (req.method === 'GET') {
-      const snapshot = await db.collection('readings').orderBy('timestamp', 'desc').limit(50).get();
+      const snapshot = await db.collection('readings').orderBy('timestamp', 'desc').limit(1000).get();
       
       if (snapshot.empty) {
         return res.status(200).json([]);
