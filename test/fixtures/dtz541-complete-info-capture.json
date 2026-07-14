@@ -1,0 +1,33 @@
+{
+  "capturedAt": "2026-07-15T01:01:52+02:00",
+  "hardware": "Holley DTZ541 via Bayha SA0013 USB optical head",
+  "serialPortSettings": "9600 baud, 8-N-1, SML 1.04",
+  "expectedDataset": "complete",
+  "obis": {
+    "1-0:96.50.1*1": {
+      "values": [
+        { "value": "HLY", "unit": null }
+      ]
+    },
+    "1-0:96.1.0*255": {
+      "values": [
+        { "value": "redacted-meter-identity", "unit": null }
+      ]
+    },
+    "1-0:1.8.0*255": {
+      "values": [
+        { "value": 0.2204, "unit": "kWh" }
+      ]
+    },
+    "1-0:2.8.0*255": {
+      "values": [
+        { "value": 0, "unit": "kWh" }
+      ]
+    },
+    "1-0:16.7.0*255": {
+      "values": [
+        { "value": 29, "unit": "W" }
+      ]
+    }
+  }
+}

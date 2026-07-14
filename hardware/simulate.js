@@ -1,30 +1,45 @@
 const fetch = require('node-fetch');
 
-// Change this to your actual Vercel URL
-const VERCEL_API_URL = 'https://your-project.vercel.app/api/data'; 
+const apiUrl = process.env.METER_API_URL;
+const ingestToken = process.env.SMART_METER_INGEST_TOKEN;
+const intervalMs = Number(process.env.SIMULATOR_INTERVAL_MS) || 5000;
+
+if (!apiUrl || !ingestToken) {
+    console.error('Set METER_API_URL and SMART_METER_INGEST_TOKEN before running the simulator.');
+    process.exit(1);
+}
 
 async function sendFakeData() {
     const fakeData = {
-        power: Math.floor(Math.random() * 500), // Random Watts between 0-500
+        meterId: process.env.METER_ID || 'dtz541-demo',
+        source: 'simulator',
+        power: Math.floor(Math.random() * 500),
         importKwh: 1234.56,
-        exportKwh: 0.00,
-        raw_data: { status: "SIMULATED_TEST" }
+        exportKwh: 0
     };
 
-    console.log(`[Simulating] Sending ${fakeData.power}W to Vercel...`);
+    console.log(`[Simulator] Sending ${fakeData.power} W.`);
 
     try {
-        const response = await fetch(VERCEL_API_URL, {
+        const response = await fetch(apiUrl, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                Authorization: `Bearer ${ingestToken}`,
+                'Content-Type': 'application/json'
+            },
             body: JSON.stringify(fakeData)
         });
-        if (response.ok) console.log("✅ Mock data sent!");
-    } catch (err) {
-        console.error("❌ Failed to reach Vercel:", err.message);
+        const result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(`API returned ${response.status}: ${JSON.stringify(result)}`);
+        }
+
+        console.log('Simulated reading accepted:', result);
+    } catch (error) {
+        console.error('Simulator request failed:', error.message);
     }
 }
 
-// Send data every 5 seconds
-setInterval(sendFakeData, 5000);
 sendFakeData();
+setInterval(sendFakeData, intervalMs);

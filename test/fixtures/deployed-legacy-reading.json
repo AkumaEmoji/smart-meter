@@ -1,0 +1,13 @@
+{
+  "captureNote": "Sanitized from the deployed /api/data response inspected on 2026-07-14; Firestore document ID redacted.",
+  "reading": {
+    "id": "redacted-firestore-document-id",
+    "power": 0,
+    "importKwh": 0.1993,
+    "exportKwh": 0,
+    "timestamp": {
+      "_seconds": 1780591288,
+      "_nanoseconds": 47000000
+    }
+  }
+}

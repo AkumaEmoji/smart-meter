@@ -1,2 +1,24 @@
-.vercel
-.env*.local
+node_modules/
+
+# Local environment and credentials
+.env
+.env.*
+!.env.example
+*firebase-adminsdk*.json
+service-account*.json
+
+# Local tooling and generated files
+.vercel/
+*.log
+*.db
+*.db-shm
+*.db-wal
+
+# Unity-generated folders (for the later MeterLens MR project)
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+[Uu]ser[Ss]ettings/

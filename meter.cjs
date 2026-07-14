@@ -1,102 +1,201 @@
 const SmartmeterObis = require('smartmeter-obis');
+const { applicationDefault, cert, initializeApp } = require('firebase-admin/app');
+const { FieldValue, getFirestore } = require('firebase-admin/firestore');
+const { extractMeterReading, serializeObisResult } = require('./meter-obis.cjs');
 
-// --- Firebase Admin setup ---
-const admin = require('firebase-admin');
-const serviceAccount = require('./smart-meter-project-497ac-firebase-adminsdk-fbsvc-98a2a903d2.json');
+function readPositiveInteger(name, fallback) {
+    const rawValue = process.env[name];
+    if (rawValue === undefined || rawValue === '') {
+        return fallback;
+    }
 
-admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount)
-});
+    const parsed = Number(rawValue);
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+        throw new Error(`${name} must be a positive integer`);
+    }
 
-const db = admin.firestore();
-// ----------------------------
+    return parsed;
+}
 
+function createFirebaseCredential() {
+    const projectId = process.env.FIREBASE_PROJECT_ID;
+    const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+    const privateKey = process.env.FIREBASE_PRIVATE_KEY;
+    const explicitValues = [projectId, clientEmail, privateKey];
+
+    if (explicitValues.every(Boolean)) {
+        return cert({
+            projectId,
+            clientEmail,
+            privateKey: privateKey.replace(/\\n/g, '\n')
+        });
+    }
+
+    if (explicitValues.some(Boolean)) {
+        throw new Error('Set all three FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY values.');
+    }
+
+    if (!process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+        throw new Error('Set Firebase environment variables or GOOGLE_APPLICATION_CREDENTIALS before running the meter reader.');
+    }
+
+    return applicationDefault();
+}
+
+const captureOnce = process.argv.includes('--capture-once');
+const writeOnce = process.argv.includes('--write-once');
+const singleRun = captureOnce || writeOnce;
+let db = null;
+if (!captureOnce) {
+    const firebaseOptions = { credential: createFirebaseCredential() };
+    if (process.env.FIREBASE_PROJECT_ID) {
+        firebaseOptions.projectId = process.env.FIREBASE_PROJECT_ID;
+    }
+
+    initializeApp(firebaseOptions);
+    db = getFirestore();
+}
+const meterId = process.env.METER_ID?.trim() || 'dtz541-demo';
+
+const pollIntervalMs = readPositiveInteger('METER_POLL_INTERVAL_MS', 10000);
+const readTimeoutMs = readPositiveInteger('METER_READ_TIMEOUT_MS', 15000);
 const options = {
-    protocol: "SmlProtocol",
-    transport: "SerialResponseTransport",
-    transportSerialPort: "/dev/tty.usbserial-1140",   // change if needed
-    transportSerialBaudrate: 9600,
+    protocol: 'SmlProtocol',
+    transport: 'SerialResponseTransport',
+    transportSerialPort: process.env.METER_SERIAL_PORT || '/dev/tty.usbserial-1140',
+    transportSerialBaudrate: readPositiveInteger('METER_SERIAL_BAUDRATE', 9600),
+    transportSerialMessageTimeout: readTimeoutMs,
+    requestInterval: singleRun ? -1 : pollIntervalMs / 1000,
     obisNameLanguage: 'en',
     obisFallbackMedium: 6
 };
 
-// Helper function to safely extract OBIS values
-const getValue = (obisResult, obisCode) => {
-    for (const id in obisResult) {
-        const entry = obisResult[id];
-        if (entry.idToString() === obisCode) {
-            const v = entry.getValue && entry.getValue();
-            if (v && v.value !== undefined && v.value !== null) {
-                return v.value;
-            }
-            const parsed = parseFloat(entry.valueToString());
-            return isNaN(parsed) ? 0 : parsed;
-        }
-    }
-    return 0;
-};
+let smTransport;
+let singleRunFinished = false;
 
-// Callback function triggered automatically whenever new data is read from the meter
-async function handleSensorData(err, obisResult) {
-    if (err) {
-        console.error("Sensor Error:", err);
+function finishSingleRun(exitCode) {
+    if (singleRunFinished) {
+        return;
+    }
+    singleRunFinished = true;
+    process.exitCode = exitCode;
+
+    setImmediate(() => {
+        smTransport.stop(() => process.exit(exitCode));
+        setTimeout(() => process.exit(exitCode), 1000).unref();
+    });
+}
+
+async function handleSensorData(error, obisResult) {
+    if (error) {
+        console.error(`Sensor error: ${error.message || error}`);
+        if (singleRun) {
+            finishSingleRun(1);
+        }
         return;
     }
 
-    console.log("----- New Telegram Received -----");
-    
-    // Display raw telegram entries in the console
-    for (let obisId in obisResult) {
+    console.log('----- New telegram received -----');
+    for (const obisId in obisResult) {
         const entry = obisResult[obisId];
-        console.log(
-            entry.idToString() + ': ' +
-            SmartmeterObis.ObisNames
-                .resolveObisName(entry, options.obisNameLanguage)
-                .obisName + ' = ' +
-            entry.valueToString()
-        );
+        const resolvedName = SmartmeterObis.ObisNames
+            .resolveObisName(entry, options.obisNameLanguage)
+            .obisName;
+        console.log(`${entry.idToString()}: ${resolvedName} = ${entry.valueToString()}`);
     }
 
-    // Parse the data from the newly fetched telegram (updates even if values are identical)
+    const parsed = extractMeterReading(obisResult);
+    if (parsed.warnings.length > 0) {
+        console.warn('OBIS mapping warnings:');
+        for (const warning of parsed.warnings) {
+            console.warn(`- ${warning}`);
+        }
+    }
+
+    if (captureOnce) {
+        console.log('----- Phase 2 capture report -----');
+        console.log(JSON.stringify({
+            meterDataset: parsed.meterDataset,
+            mappedReading: parsed.reading,
+            observedObis: serializeObisResult(obisResult),
+            warnings: parsed.warnings
+        }, null, 2));
+        finishSingleRun(0);
+        return;
+    }
+
+    const recognizedValues = [
+        parsed.reading.power,
+        parsed.reading.importKwh,
+        parsed.reading.exportKwh,
+        ...Object.values(parsed.reading.phasePowerW),
+        ...Object.values(parsed.reading.voltageV),
+        ...Object.values(parsed.reading.currentA),
+        parsed.reading.frequencyHz
+    ];
+    if (!recognizedValues.some((value) => value !== null)) {
+        console.error('No recognized meter measurements were found; this telegram will not be stored.');
+        return;
+    }
+
+    const timestamp = FieldValue.serverTimestamp();
     const data = {
-        power:     getValue(obisResult, '1-0:16.7.0*255'),
-        importKwh: getValue(obisResult, '1-0:1.8.0*255'),
-        exportKwh: getValue(obisResult, '1-0:2.8.0*255'),
-        timestamp: admin.firestore.FieldValue.serverTimestamp()
+        schemaVersion: 1,
+        meterId,
+        source: 'meter',
+        meterDataset: parsed.meterDataset,
+        ...parsed.reading,
+        timestamp,
+        receivedAt: timestamp
     };
 
-    console.log(`[${new Date().toLocaleTimeString()}] ☁️ Pushing to Firestore: ${data.power}W`);
+    const powerSummary = data.power === null ? 'unavailable' : `${data.power} W`;
+    console.log(
+        `[${new Date().toLocaleTimeString()}] Writing ${parsed.meterDataset} reading (${powerSummary}) to Firestore.`
+    );
 
     try {
-        // Always save to database since this is a fresh reading request
-        await db.collection("readings").add(data);
-        console.log("✅ Upload Successful");
-        
-        // Display the uploaded data summary immediately after a successful upload
-        console.log("📊 --- Uploaded Data Summary ---");
-        console.log(`| Power:      ${data.power} W`);
-        console.log(`| Import kWh: ${data.importKwh} kWh`);
-        console.log(`| Export kWh: ${data.exportKwh} kWh`);
-        console.log("---------------------------------\n");
-        
-    } catch (err) {
-        console.error("❌ Firestore Error:", err.message);
+        await db.collection('readings').add(data);
+        console.log('Upload successful.');
+        console.log(
+            `Power: ${powerSummary} | Import: ${data.importKwh ?? 'unavailable'} kWh | Export: ${data.exportKwh ?? 'unavailable'} kWh`
+        );
+        if (writeOnce) {
+            finishSingleRun(0);
+        }
+    } catch (firestoreError) {
+        console.error('Firestore error:', firestoreError.message);
+        if (writeOnce) {
+            finishSingleRun(1);
+        }
     }
 }
 
-// Initialize the transport layer with options and callback
-const smTransport = SmartmeterObis.init(options, handleSensorData);
+smTransport = SmartmeterObis.init(options, handleSensorData);
 
-console.log("🚀 Starting Smart Meter Task Loop (Every 10 seconds)...");
-
-// Main worker function to trigger a single on-demand hardware read
 function requestMeterData() {
-    console.log(`[${new Date().toLocaleTimeString()}] 🔄 Requesting fresh data from meter hardware...`);
-    smTransport.process(); 
+    console.log(`[${new Date().toLocaleTimeString()}] Requesting a fresh meter reading.`);
+    smTransport.process();
 }
 
-// Trigger the first data request immediately on startup
+if (captureOnce) {
+    console.log(
+        `Capturing one SML telegram from ${options.transportSerialPort} at ${options.transportSerialBaudrate} baud without writing to Firebase.`
+    );
+} else if (writeOnce) {
+    console.log(
+        `Reading one SML telegram from ${options.transportSerialPort} and writing one document to Firestore.`
+    );
+} else {
+    console.log(`Starting meter reader on ${options.transportSerialPort} every ${pollIntervalMs} ms.`);
+}
 requestMeterData();
 
-// Continuously request fresh data from the physical hardware every 10 seconds
-setInterval(requestMeterData, 10000);
+function stopMeterReader(signal) {
+    console.log(`Stopping meter reader after ${signal}.`);
+    smTransport.stop(() => process.exit(0));
+    setTimeout(() => process.exit(0), 1000).unref();
+}
+
+process.once('SIGINT', () => stopMeterReader('SIGINT'));
+process.once('SIGTERM', () => stopMeterReader('SIGTERM'));

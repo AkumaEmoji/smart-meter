@@ -1,10 +1,24 @@
-var admin = require("firebase-admin");
+const { applicationDefault, cert, initializeApp } = require('firebase-admin/app');
+const { FieldValue, getFirestore } = require('firebase-admin/firestore');
 
-const serviceAccount = require('./smart-meter-project-497ac-firebase-adminsdk-fbsvc-98a2a903d2.json');
+const projectId = process.env.FIREBASE_PROJECT_ID;
+const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+const privateKey = process.env.FIREBASE_PRIVATE_KEY;
+const explicitCredentials = [projectId, clientEmail, privateKey];
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-});
+if (explicitCredentials.some(Boolean) && !explicitCredentials.every(Boolean)) {
+  throw new Error('Set all Firebase environment variables or use GOOGLE_APPLICATION_CREDENTIALS.');
+}
+
+const credential = explicitCredentials.every(Boolean)
+  ? cert({
+      projectId,
+      clientEmail,
+      privateKey: privateKey.replace(/\\n/g, '\n')
+    })
+  : applicationDefault();
+
+initializeApp({ credential, ...(projectId ? { projectId } : {}) });
 
 const SmartmeterObis = require('smartmeter-obis');
 const path = require('path');
@@ -12,7 +26,7 @@ const express = require('express');
 
 // --- Firebaseデータベースクライアントの取得 ---
 // Cloud Firestore を使う場合:
-const firestoreDb = admin.firestore();
+const firestoreDb = getFirestore();
 
 // Firebase Realtime Database は使わないのでコメントアウトまたは削除します。
 // const rtdb = admin.database();
@@ -71,7 +85,7 @@ async function displayAndSaveData(err, obisResult) {
     console.log(`Saving to Cloud Firestore... 電力: ${power}W, 受電: ${importKwh}kWh`);
     try {
         await firestoreDb.collection('meter_readings').add({
-            timestamp: admin.firestore.FieldValue.serverTimestamp(), // Firestore のサーバータイムスタンプを使用
+            timestamp: FieldValue.serverTimestamp(), // Firestore のサーバータイムスタンプを使用
             power: power,
             total_import_kwh: importKwh,
             total_export_kwh: exportKwh,
