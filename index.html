@@ -56,6 +56,9 @@
     .time-bar select{min-width:160px}
     .time-bar select:focus,.filter-bar select:focus,.filter-bar input:focus{border-color:rgba(245,158,11,.45)}
     .time-bar select option,.filter-bar select option{background:#131d30}
+    .history-load-btn{padding:9px 14px;border-radius:10px;font-size:.86rem;font-weight:700;cursor:pointer;border:1px solid var(--border);background:rgba(255,255,255,.04);color:var(--muted);transition:all .18s}
+    .history-load-btn:hover:not(:disabled){background:rgba(255,255,255,.08);color:var(--text)}
+    .history-load-btn:disabled{cursor:not-allowed;opacity:.55}
     .time-badge{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:999px;background:rgba(245,158,11,.10);border:1px solid rgba(245,158,11,.20);color:var(--power);font-size:.82rem;font-weight:700;letter-spacing:.04em}
     .filter-count{font-size:.85rem;color:var(--faint);white-space:nowrap}
     .filter-bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
@@ -156,14 +159,16 @@
         <option value="30d" selected>Last 30 days</option>
         <option value="90d">Last 90 days</option>
         <option value="365d">Last 12 months</option>
-        <option value="all">All data</option>
+        <option value="all">All loaded data</option>
       </select>
       <select id="group-by" onchange="applyTimeFilter()">
         <option value="day" selected>Group by day</option>
         <option value="week">Group by week</option>
         <option value="month">Group by month</option>
       </select>
+      <button id="load-older-btn" class="history-load-btn" onclick="loadOlderHistory()">Load older records</button>
       <span class="filter-count" id="time-filter-count"></span>
+      <span class="filter-count" id="history-load-status">History loads once when this page opens.</span>
     </div>
 
     <div class="summary-grid">
@@ -261,15 +266,54 @@
 
 <script>
 const REFRESH_MS = 10000;
+const HISTORY_PAGE_SIZE = 1000;
 let allData = [];
 let filteredByTime = [];
 let trendRange = 20;
+let historyHasMore = true;
+let historyLoading = false;
+let latestPollTimer = null;
 
 function parseTs(ts) {
   if (ts && ts._seconds) return new Date(ts._seconds * 1000);
   if (ts && ts.seconds) return new Date(ts.seconds * 1000);
   if (ts) return new Date(ts);
   return null;
+}
+
+function toDashboardReading(reading) {
+  if (!reading || typeof reading !== 'object') return null;
+
+  return {
+    id: reading.sampleId ?? reading.id ?? null,
+    timestamp: reading.timestamp ?? null,
+    power: reading.powerW ?? reading.power ?? null,
+    importKwh: reading.energyImportTotalKwh ?? reading.importKwh ?? null,
+    exportKwh: reading.energyExportTotalKwh ?? reading.exportKwh ?? null,
+    source: reading.quality?.source ?? reading.source ?? 'unknown'
+  };
+}
+
+function readingKey(reading) {
+  return reading.id ? `id:${reading.id}` : `time:${reading.timestamp ?? 'unknown'}`;
+}
+
+function mergeReadings(readings, { reset = false } = {}) {
+  const merged = new Map();
+  if (!reset) {
+    allData.forEach(reading => merged.set(readingKey(reading), reading));
+  }
+
+  readings
+    .map(toDashboardReading)
+    .filter(Boolean)
+    .forEach(reading => merged.set(readingKey(reading), reading));
+
+  allData = [...merged.values()].sort((left, right) => {
+    const leftTime = parseTs(left.timestamp)?.getTime() ?? 0;
+    const rightTime = parseTs(right.timestamp)?.getTime() ?? 0;
+    return rightTime - leftTime;
+  });
 }
 
 function fmtLong(d) {
@@ -634,7 +678,7 @@ function setTrendRange(n, btn) {
 }
 
 function drawTrend() {
-  const data = filteredByTime.length ? filteredByTime : allData;
+  const data = filteredByTime;
   const slice = trendRange === 0 ? [...data].reverse() : [...data].slice(0, trendRange).reverse();
   const vals = slice.map(d => Number(d.power || 0));
 
@@ -755,7 +799,7 @@ function drawAggChart(data) {
 
   if (!agg.length) {
     document.getElementById('agg-chart').innerHTML = '';
-    document.getElementById('agg-insight').textContent = 'No data available for this time range yet — try "All data" or wait for more readings to be collected.';
+    document.getElementById('agg-insight').textContent = 'No loaded data is available for this time range yet — try "All loaded data", load older records, or wait for more readings.';
     document.getElementById('agg-periods').textContent = 'Periods: --';
     document.getElementById('agg-min').textContent = 'Lowest avg: --';
     document.getElementById('agg-max').textContent = 'Highest avg: --';
@@ -820,7 +864,7 @@ function drawAggChart(data) {
     `Blue line = average power per ${mode}. Orange dots = peak reading in that ${mode}.`;
 }
 
-const TIME_LABELS = { '7d':'Last 7 days', '30d':'Last 30 days', '90d':'Last 90 days', '365d':'Last 12 months', 'all':'All data' };
+const TIME_LABELS = { '7d':'Last 7 days', '30d':'Last 30 days', '90d':'Last 90 days', '365d':'Last 12 months', 'all':'All loaded data' };
 const GROUP_LABELS = { 'day':'by day', 'week':'by week', 'month':'by month' };
 
 function applyTimeFilter() {
@@ -851,7 +895,7 @@ function renderTable() {
   const sv = document.getElementById('search-input').value.trim().toLowerCase();
   const sf = document.getElementById('status-filter').value;
   const pf = document.getElementById('power-filter').value;
-  const data = filteredByTime.length ? filteredByTime : allData;
+  const data = filteredByTime;
 
   let vis = 0;
 
@@ -944,15 +988,17 @@ function renderEmptyState() {
   document.getElementById('history-body').innerHTML = '<tr><td colspan="5" class="muted-block">No meter readings yet. Connect the smart meter to begin.</td></tr>';
 }
 
-function renderErrorState() {
+function renderErrorState(message = 'Connection interrupted') {
   setDbStatus('frontend-only');
   document.getElementById('api-status').textContent = 'API not reachable';
   document.getElementById('api-dot').className = 'dot off';
   document.getElementById('meter-status').textContent = 'Meter status unknown';
   document.getElementById('meter-dot').className = 'dot off';
   document.getElementById('last-ui-update').textContent = `Screen updated: ${new Date().toLocaleTimeString()}`;
-  document.getElementById('connection-note').textContent = 'Connection interrupted';
-  document.getElementById('history-body').innerHTML = '<tr><td colspan="5" class="muted-block" style="color:#fecaca;">Connection interrupted. Cannot reach /api/data right now.</td></tr>';
+  document.getElementById('connection-note').textContent = message;
+  if (!allData.length) {
+    document.getElementById('history-body').innerHTML = `<tr><td colspan="5" class="muted-block" style="color:#fecaca;">${escapeXml(message)}</td></tr>`;
+  }
 }
 
 function renderDashboard(data) {
@@ -991,46 +1037,120 @@ function renderDashboard(data) {
   applyTimeFilter();
 }
 
-async function update() {
+function updateHistoryLoadState(message = '') {
+  const button = document.getElementById('load-older-btn');
+  const status = document.getElementById('history-load-status');
+  button.disabled = historyLoading || !historyHasMore;
+  button.textContent = historyLoading
+    ? 'Loading…'
+    : (historyHasMore ? 'Load older records' : 'All available records loaded');
+  status.textContent = message || `${allData.length} records loaded. Live updates read one document at a time.`;
+}
+
+async function loadHistoryPage({ reset = false } = {}) {
+  if (historyLoading || (!reset && !historyHasMore)) return;
+
+  historyLoading = true;
+  updateHistoryLoadState('Loading historical readings…');
+
   try {
-    const res = await fetch('/api/data');
+    const params = new URLSearchParams({
+      limit: String(HISTORY_PAGE_SIZE),
+      order: 'desc'
+    });
+
+    if (!reset && allData.length) {
+      const oldestDate = parseTs(allData[allData.length - 1].timestamp);
+      if (oldestDate && !Number.isNaN(oldestDate.getTime())) {
+        params.set('to', new Date(oldestDate.getTime() - 1).toISOString());
+      }
+    }
+
+    const res = await fetch(`/api/v1/readings?${params}`);
 
     if (!res.ok) {
-      console.error('API HTTP error:', res.status, res.statusText);
-      renderErrorState();
-      return;
+      throw new Error(`History API returned ${res.status}`);
     }
 
-    const data = await res.json();
-
-    if (!Array.isArray(data)) {
-      console.error('API did not return an array:', data);
-      renderErrorState();
-      return;
+    const payload = await res.json();
+    if (!payload || !Array.isArray(payload.readings)) {
+      throw new Error('History API returned an unexpected response');
     }
 
-    if (data.length === 0) {
+    mergeReadings(payload.readings, { reset });
+    historyHasMore = payload.readings.length === HISTORY_PAGE_SIZE;
+
+    if (allData.length) {
+      renderDashboard(allData);
+    } else {
       renderEmptyState();
+    }
+
+    updateHistoryLoadState(
+      historyHasMore
+        ? `${allData.length} records loaded. Use the button to request older records.`
+        : `All ${allData.length} available records loaded.`
+    );
+  } catch (error) {
+    console.error('History fetch error:', error);
+    if (!allData.length) {
+      renderErrorState('History is temporarily unavailable. Live polling will keep retrying.');
+    }
+    updateHistoryLoadState('Could not load history. Try again after the Firestore quota resets.');
+  } finally {
+    historyLoading = false;
+    updateHistoryLoadState(document.getElementById('history-load-status').textContent);
+  }
+}
+
+function loadOlderHistory() {
+  return loadHistoryPage();
+}
+
+async function pollLatest() {
+  clearTimeout(latestPollTimer);
+
+  try {
+    const res = await fetch('/api/v1/readings/latest', { cache: 'no-store' });
+
+    if (res.status === 404) {
+      if (!allData.length) renderEmptyState();
       return;
     }
+
+    if (!res.ok) {
+      throw new Error(`Latest API returned ${res.status}`);
+    }
+
+    const latest = await res.json();
+    mergeReadings([latest]);
 
     try {
-      renderDashboard(data);
+      renderDashboard(allData);
+      updateHistoryLoadState();
     } catch (renderErr) {
       console.error('Render error:', renderErr);
       document.getElementById('connection-note').textContent = 'Frontend render error';
       document.getElementById('history-body').innerHTML = '<tr><td colspan="5" class="muted-block" style="color:#fecaca;">Data was received, but the dashboard hit a render error. Check the browser console.</td></tr>';
     }
-  } catch (fetchErr) {
-    console.error('Fetch error:', fetchErr);
-    renderErrorState();
+  } catch (error) {
+    console.error('Latest reading fetch error:', error);
+    renderErrorState('Live updates are temporarily unavailable; loaded history is preserved.');
+  } finally {
+    latestPollTimer = setTimeout(pollLatest, REFRESH_MS);
   }
 }
 
-setDbStatus('checking');
-renderEmptyState();
-update();
-setInterval(update, REFRESH_MS);
+async function startDashboard() {
+  renderEmptyState();
+  setDbStatus('checking');
+  historyHasMore = true;
+  updateHistoryLoadState('Loading history once…');
+  await loadHistoryPage({ reset: true });
+  await pollLatest();
+}
+
+startDashboard();
 </script>
 </body>
 </html>

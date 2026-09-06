@@ -744,6 +744,31 @@ Before ending a MeterLens MR work session:
 
 ## Session log
 
+### 2026-09-06 - Dashboard Firestore read-quota correction
+
+- Cause confirmed:
+  - The dashboard called legacy `GET /api/data` every 10 seconds.
+  - That route queried up to 1,000 Firestore documents, so repeated full-history
+    refreshes exhausted the daily document-read allowance.
+- Changed locally:
+  - Dashboard history now loads once from the v1 history endpoint in pages of
+    at most 1,000 readings.
+  - Live refresh now polls only the one-document v1 latest endpoint every
+    10 seconds and deduplicates/merges new readings in browser memory.
+  - Added a manual **Load older records** button and truthful **All loaded
+    data** wording.
+  - Preserved already-loaded readings when a later live request fails.
+  - Fixed empty selected time ranges so they no longer fall back to showing
+    records outside the range.
+  - Added dashboard syntax and request-pattern tests.
+- Existing work preserved:
+  - The pre-existing chart layout and tooltip implementation in `index.html`
+    remains intact.
+  - The separate Unity project was not modified.
+- Deployment note:
+  - The correction is local until committed and deployed. Firestore free quota
+    recovery still depends on the provider's daily reset.
+
 ### 2026-07-14 - Repository, deployment, and manual audit
 
 - Completed:

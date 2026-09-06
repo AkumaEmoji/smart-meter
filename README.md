@@ -46,6 +46,13 @@ frequency through the optical interface.
 The application currently uses REST polling. It has no WebSocket or SSE
 endpoint. See `docs/API_V1.md` for the exact payload and error contract.
 
+The browser dashboard loads at most 1,000 historical readings once when the
+page opens, then polls only `/api/v1/readings/latest` every 10 seconds. New
+samples are merged into the page in memory. Older pages are fetched only when
+the user selects **Load older records**. The legacy `/api/data` route remains
+available for compatibility but is no longer used by the dashboard refresh
+loop.
+
 ## Requirements
 
 - Node.js 22 or newer

@@ -13,6 +13,16 @@ current browser dashboard. New clients should use the v1 routes below.
 - Authentication: read routes are public for the current university demo.
 - Caching: the latest and history routes send `Cache-Control: no-store`.
 
+### Browser dashboard read pattern
+
+The dashboard makes one bounded history request when it opens, then polls only
+the one-document latest route every 10 seconds. It merges distinct samples in
+browser memory and requests another history page only when the user presses
+**Load older records**. It no longer calls the legacy 1,000-document route on
+every refresh. With one continuously open dashboard tab, this keeps routine
+polling to about 8,640 document reads per 24 hours plus the history pages the
+user explicitly loads.
+
 ## `GET /api/v1/readings/latest`
 
 Returns the newest Firestore document after normalizing the legacy storage
