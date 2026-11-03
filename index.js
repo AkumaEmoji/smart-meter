@@ -9,7 +9,7 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
-// 1. Tell Express to serve your index.html automatically
+// 1. Tell Express to serve  index.html automatically
 app.use(express.static(__dirname));
 
 // 2. Link my working API
