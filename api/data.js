@@ -29,12 +29,12 @@ export default async function handler(req, res) {
 
       // 1. Check if valid, unexpired data exists in the memory cache
       if (cachedReadings && (now - lastFetchTime < CACHE_DURATION_MS)) {
-        console.log("Serving 1000 readings from memory cache (0 Firestore Reads!)");
+        console.log("Serving 100 readings from memory cache (0 Firestore Reads!)");
         return res.status(200).json(cachedReadings);
       }
 
-      console.log("Cache miss or expired. Fetching 1000 readings from Firestore...");
-      const snapshot = await db.collection('readings').orderBy('timestamp', 'desc').limit(1000).get();
+      console.log("Cache miss or expired. Fetching 100 readings from Firestore...");
+      const snapshot = await db.collection('readings').orderBy('timestamp', 'desc').limit(100).get();//1000 samples → 100 samples. Change if neccessary
       
       if (snapshot.empty) {
         return res.status(200).json([]);
