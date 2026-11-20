@@ -14,7 +14,7 @@ const db = admin.firestore();
 const options = {
     protocol: "SmlProtocol",
     transport: "SerialResponseTransport",
-    transportSerialPort: "/dev/tty.usbserial-1140",   // change if needed
+    transportSerialPort: "/dev/tty.usbserial-1140",   // change if needed, port selection
     transportSerialBaudrate: 9600,
     obisNameLanguage: 'en',
     obisFallbackMedium: 6
