@@ -1,37 +1,37 @@
 'use strict';
 
-// 1. データベースを扱うための道具（ライブラリ）を読み込む
+// 1. Load the library (tool) for working with the database
 const Database = require('better-sqlite3');
 
-// 2. 「realtime.db」という名前のデータベースファイルを作成・接続する
+// 2. Create or connect to a database file named "realtime.db"
 const db = new Database('realtime.db');
 
-// 3. データを保存するための「表（テーブル）」を作る
-// ts という名前の列に、時刻（テキスト）を保存する設定
+// 3. Create a "table" to store the data
+// Configured to store timestamps (as text) in a column named ts
 db.exec("CREATE TABLE IF NOT EXISTS ticks (ts TEXT)");
 
-// 書き込み用の命令を準備
+// Prepare the insert statement
 const insert = db.prepare("INSERT INTO ticks (ts) VALUES (?)");
 
-console.log("--- 10秒間の書き込みテストを開始します ---");
+console.log("--- Starting 10-second write test ---");
 
 let count = 0;
 
-// 4. 1秒（1000ミリ秒）ごとに実行するタイマー
+// 4. Timer that runs every 1 second (1000 milliseconds)
 const timer = setInterval(() => {
-    const now = new Date().toISOString(); // 今の時刻を取得
-    
-    // 💾 データベースへ保存（書き込み実行！）
-    insert.run(now);
-    
-    count++;
-    console.log(`[${count}/10] データベースに書き込み完了: ${now}`);
+    const now = new Date().toISOString(); // Get the current timestamp
 
-    // 5. 10回書いたら、勝手にファイルが大きくならないように安全に終了する
+    // 💾 Save to the database (execute write!)
+    insert.run(now);
+
+    count++;
+    console.log(`[${count}/10] Wrote to database: ${now}`);
+
+    // 5. Exit safely after 10 writes so the file doesn't keep growing unexpectedly
     if (count >= 10) {
-        clearInterval(timer); // タイマーを止める
-        db.close();          // データベースを安全に閉じる
-        console.log("--- テスト終了。'realtime.db' ができているはずです ---");
-        process.exit();      // プログラムを終了
+        clearInterval(timer); // Stop the timer
+        db.close();          // Safely close the database
+        console.log("--- Test finished. 'realtime.db' should now be created ---");
+        process.exit();      // Exit the program
     }
 }, 1000);
