@@ -10,14 +10,14 @@ const SmartmeterObis = require('smartmeter-obis');
 const path = require('path');
 const express = require('express');
 
-// --- Firebaseデータベースクライアントの取得 ---
-// Cloud Firestore を使う場合:
+// --- Obtain the Firebase database client ---
+// When using Cloud Firestore:
 const firestoreDb = admin.firestore();
 
-// Firebase Realtime Database は使わないのでコメントアウトまたは削除します。
+// Comment out or remove this since we're not using Firebase Realtime Database.
 // const rtdb = admin.database();
 
-// --- データベースの準備 (SQLiteの部分は削除) ---
+// --- Database setup (SQLite parts removed) ---
 // const db = new Database('sensor_data.db');
 // db.prepare(`...`).run();
 
@@ -31,7 +31,7 @@ const options = {
     obisFallbackMedium: 6
 };
 
-// --- APIサーバーの準備 (フロントエンド用) ---
+// --- API server setup (for the frontend) ---
 const app = express();
 app.use(express.static(path.join(__dirname)));
 
@@ -39,15 +39,15 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Cloud Firestore からデータを取得するためのAPIエンドポイント
+// API endpoint for fetching data from Cloud Firestore
 app.get('/api/data', async (req, res) => {
     try {
-        // 'meter_readings'コレクションから最新の100件のデータを取得
+        // Fetch the 100 most recent documents from the 'meter_readings' collection
         const snapshot = await firestoreDb.collection('meter_readings')
-                                          .orderBy('timestamp', 'desc') // 最新のものを取得
+                                          .orderBy('timestamp', 'desc') // Get the latest entries
                                           .limit(100)
                                           .get();
-        // 取得したドキュメントを整形してレスポンスとして返す
+        // Format the retrieved documents and return them in the response
         const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         res.json(data);
     } catch (err) {
@@ -59,8 +59,8 @@ app.get('/api/data', async (req, res) => {
 app.listen(3000, () => console.log("API Server: http://localhost:3000"));
 
 
-// --- データ受信時の処理 ---
-// --- 1. 受信時の処理を修正してCloud Firestoreに保存 ---
+// --- Data reception handling ---
+// --- 1. Update reception handling to save to Cloud Firestore ---
 async function displayAndSaveData(err, obisResult) {
     if (err) return console.error(err);
 
@@ -71,7 +71,7 @@ async function displayAndSaveData(err, obisResult) {
     console.log(`Saving to Cloud Firestore... 電力: ${power}W, 受電: ${importKwh}kWh`);
     try {
         await firestoreDb.collection('meter_readings').add({
-            timestamp: admin.firestore.FieldValue.serverTimestamp(), // Firestore のサーバータイムスタンプを使用
+            timestamp: admin.firestore.FieldValue.serverTimestamp(), // Use Firestore's server timestamp
             power: power,
             total_import_kwh: importKwh,
             total_export_kwh: exportKwh,
@@ -82,13 +82,13 @@ async function displayAndSaveData(err, obisResult) {
         console.error("Error writing document to Cloud Firestore: ", error);
     }
 
-    // 次の受信待機
+    // Wait for the next reading
     smTransport.process();
 }
 
-// --- 2. 最初の1回目をキックする ---
+// --- 2. Kick off the first read ---
 const smTransport = SmartmeterObis.init(options, displayAndSaveData);
 console.log("Starting Smart Meter Reading (Press Ctrl+C to stop)...");
 
-// while(1) ではなく、これ一回でOK
+// Calling this once is enough instead of a while(1) loop
 smTransport.process();
