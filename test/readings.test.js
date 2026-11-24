@@ -55,12 +55,12 @@ test('validates history range, limit, and order', () => {
   assert.deepEqual(parseHistoryQuery({
     from: '2026-07-01T00:00:00Z',
     to: '2026-07-14T00:00:00Z',
-    limit: '25',
+    limit: '20',
     order: 'asc',
   }), {
     from: new Date('2026-07-01T00:00:00Z'),
     to: new Date('2026-07-14T00:00:00Z'),
-    limit: 25,
+    limit: 20,
     order: 'asc',
   });
 
@@ -70,13 +70,16 @@ test('validates history range, limit, and order', () => {
     { from: '2026-07-15T00:00:00Z', to: '2026-07-14T00:00:00Z' },
     { limit: '0' },
     { limit: '1.5' },
-    { limit: '1001' },
+    { limit: '21' },
+    { limit: '100' },
+    { limit: '1000' },
     { order: 'sideways' },
   ];
 
   for (const query of invalidQueries) {
     assert.throws(() => parseHistoryQuery(query), ApiValidationError);
   }
+  assert.equal(parseHistoryQuery().limit, 20);
 });
 
 test('calculates historical energy from cumulative-register deltas', () => {

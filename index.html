@@ -266,7 +266,7 @@
 
 <script>
 const REFRESH_MS = 10000;
-const HISTORY_PAGE_SIZE = 1000;
+const HISTORY_PAGE_SIZE = 20;
 let allData = [];
 let filteredByTime = [];
 let trendRange = 20;
@@ -1043,7 +1043,7 @@ function updateHistoryLoadState(message = '') {
   button.disabled = historyLoading || !historyHasMore;
   button.textContent = historyLoading
     ? 'Loading…'
-    : (historyHasMore ? 'Load older records' : 'All available records loaded');
+    : (historyHasMore ? `Load ${HISTORY_PAGE_SIZE} older records` : 'All available records loaded');
   status.textContent = message || `${allData.length} records loaded. Live updates read one document at a time.`;
 }
 
@@ -1088,7 +1088,7 @@ async function loadHistoryPage({ reset = false } = {}) {
 
     updateHistoryLoadState(
       historyHasMore
-        ? `${allData.length} records loaded. Use the button to request older records.`
+        ? `${allData.length} records loaded. Load ${HISTORY_PAGE_SIZE} older records with the button.`
         : `All ${allData.length} available records loaded.`
     );
   } catch (error) {

@@ -14,6 +14,7 @@ process.env.FIREBASE_PRIVATE_KEY = privateKey;
 process.env.SMART_METER_INGEST_TOKEN = 'test-ingestion-token';
 
 const { default: handler } = await import('../api/data.js');
+const { db } = await import('../api/firebase.js');
 
 function createResponse() {
   const state = { status: null, body: null, headers: {} };
@@ -60,4 +61,28 @@ test('unsupported methods return 405 and an Allow header', async () => {
 
   assert.equal(response.state.status, 405);
   assert.equal(response.state.headers.Allow, 'GET, POST');
+});
+
+test('legacy GET reads at most twenty documents and reuses its cache', async (t) => {
+  let limit;
+  let fetches = 0;
+  const query = {
+    orderBy: () => query,
+    limit: (value) => { limit = value; return query; },
+    get: async () => {
+      fetches++;
+      return { docs: Array.from({ length: limit }, (_, i) => ({
+        id: String(i), data: () => ({ power: i }),
+      })) };
+    },
+  };
+  t.mock.method(db, 'collection', () => query);
+  for (let i = 0; i < 2; i++) {
+    const response = createResponse();
+    await handler({ method: 'GET' }, response);
+    assert.equal(response.state.status, 200);
+    assert.equal(response.state.body.length, 20);
+  }
+  assert.equal(limit, 20);
+  assert.equal(fetches, 1);
 });

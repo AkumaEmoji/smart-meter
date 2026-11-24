@@ -1,6 +1,6 @@
 export const API_SCHEMA_VERSION = 1;
-export const DEFAULT_HISTORY_LIMIT = 300;
-export const MAX_HISTORY_LIMIT = 1000;
+export const DEFAULT_HISTORY_LIMIT = 20;
+export const MAX_HISTORY_LIMIT = 20;
 export const DEFAULT_STALE_AFTER_SECONDS = 30;
 const ISO_INSTANT_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/;
 

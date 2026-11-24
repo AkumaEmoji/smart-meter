@@ -102,13 +102,13 @@ Query parameters:
 |---|---:|---|
 | `from` | none | ISO-8601 timestamp with timezone, inclusive |
 | `to` | none | ISO-8601 timestamp with timezone, inclusive |
-| `limit` | `300` | Whole number from 1 to 1000 |
+| `limit` | `20` | Whole number from 1 to 20; larger values return `400` |
 | `order` | `desc` | `asc` or `desc` |
 
 Example:
 
 ```text
-GET /api/v1/readings?from=2026-07-14T00:00:00Z&to=2026-07-15T00:00:00Z&limit=500&order=asc
+GET /api/v1/readings?from=2026-07-14T00:00:00Z&to=2026-07-15T00:00:00Z&limit=20&order=asc
 ```
 
 Example response envelope:
@@ -120,7 +120,7 @@ Example response envelope:
   "query": {
     "from": "2026-07-14T00:00:00.000Z",
     "to": "2026-07-15T00:00:00.000Z",
-    "limit": 500,
+    "limit": 20,
     "order": "asc"
   },
   "count": 2,
@@ -143,6 +143,11 @@ calculated only across the returned samples. A decrease in a cumulative
 register is treated as a reset/rollover boundary: it is never returned as
 negative consumption, its reset counter increases, and `isComplete` becomes
 false. A delta is `null` when fewer than two comparable samples exist.
+
+The dashboard loads one page of 20 at startup. Its **Load 20 older records**
+button requests another page using `to` just before the oldest loaded sample.
+Live refresh requests only the latest reading and merges it into the loaded
+graph. The legacy `GET /api/data` route also returns at most 20 records.
 
 Invalid query parameters return `400`. A valid range with no readings returns
 `200` with an empty `readings` array and null deltas.

@@ -7,7 +7,7 @@ import {
   parseIngestionBody,
   parseIngestionMetadata,
 } from './ingestion.js';
-import { API_SCHEMA_VERSION, configuredMeterId } from './readings.js';
+import { API_SCHEMA_VERSION, configuredMeterId, MAX_HISTORY_LIMIT } from './readings.js';
 
 const ingestToken = process.env.SMART_METER_INGEST_TOKEN?.trim() ?? '';
 const meterId = configuredMeterId();
@@ -27,7 +27,7 @@ export default async function handler(req, res) {
 
       const snapshot = await db.collection('readings')
         .orderBy('timestamp', 'desc')
-        .limit(1000)
+        .limit(MAX_HISTORY_LIMIT)
         .get();
 
       const results = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
